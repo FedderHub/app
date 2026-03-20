@@ -68,6 +68,9 @@ def federated_average(
             f"but {len(sample_counts)} sample counts."
         )
 
+    if any(n < 0 for n in sample_counts):
+        raise ValueError("Sample counts must be non-negative.")
+
     weight_lengths = {len(w) for w in client_weights}
     if len(weight_lengths) > 1:
         raise ValueError(
@@ -154,7 +157,7 @@ def run_mock_aggregation_round(round_number: int = 1) -> None:
     print(f"  Weight contributions:")
     for name, n in zip(client_names, sample_counts):
         pct = (n / total_samples) * 100
-        print(f"    {name:<15} → {pct:.1f}% influence")
+        print(f"    {name:<15} -> {pct:.1f}% influence")
 
     formatted_global = [f"{w:.6f}" for w in global_weights]
     print(f"\n[OUTPUT] New Global Model Weights:")
