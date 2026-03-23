@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FederHub Beta Client</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">FederHub • Team Beta • Phase 1</p>
+        <h1>Edge Node Prototype</h1>
+        <p class="lede">
+          Local-first desktop shell for selecting a client data directory and
+          launching a standalone training worker.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Client Operator Console</h2>
+            <p>Login is a local placeholder in Phase 1 and does not call a backend.</p>
+          </div>
+          <span class="badge">Offline Mode</span>
+        </div>
+
+        <form id="client-form" class="grid">
+          <label>
+            <span>Username</span>
+            <input id="username" name="username" type="text" placeholder="client.operator" />
+          </label>
+
+          <label>
+            <span>Password</span>
+            <input id="password" name="password" type="password" placeholder="••••••••" />
+          </label>
+
+          <label class="wide">
+            <span>Selected Local Data Folder</span>
+            <div class="folder-row">
+              <input id="selected-folder" type="text" readonly placeholder="No folder selected yet" />
+              <button id="pick-folder" type="button" class="secondary">Choose Folder</button>
+            </div>
+          </label>
+
+          <div class="wide actions">
+            <button id="start-training" type="submit">Start Local Training</button>
+            <p class="hint">The demo worker trains on a local dummy CSV and writes weights to `ml/output`.</p>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel output-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Run Output</h2>
+            <p>Status messages from the local Python worker appear here.</p>
+          </div>
+          <span id="status-pill" class="badge muted">Idle</span>
+        </div>
+
+        <pre id="log-output" class="terminal">Ready. Choose a folder and start training.</pre>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
