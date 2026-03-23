@@ -1,0 +1,12 @@
+How to run:
+
+go to backend:
+
+source federhub/bin/activate
+
+python -m uvicorn app.main:app --reload
+
+
+go to frontend (in different terminal window):
+
+npm start
