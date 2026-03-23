@@ -1,6 +1,24 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
-const { spawn } = require("child_process");
+const { spawn, execFileSync } = require("child_process");
+const fs = require("fs");
+
+/**
+ * Probe for a working Python interpreter.
+ * Tries python3 first (standard on macOS/Linux), then python (Windows).
+ * Returns the command string or null if neither is found.
+ */
+function findPython() {
+  for (const cmd of ["python3", "python"]) {
+    try {
+      execFileSync(cmd, ["--version"], { stdio: "ignore" });
+      return cmd;
+    } catch {
+      // not found, try next
+    }
+  }
+  return null;
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -33,11 +51,32 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("training:start", async (_event, payload = {}) => {
-    const selectedFolder = payload.selectedFolder || "";
+    // --- Fix #3: Defensive type check for payload ---
+    const safePayload = payload && typeof payload === "object" ? payload : {};
+    const selectedFolder = safePayload.selectedFolder || "";
+
     const projectRoot = __dirname;
     const scriptPath = path.join(projectRoot, "ml", "train.py");
     const datasetPath = path.join(projectRoot, "ml", "data", "dummy.csv");
-    const outputDir = path.join(projectRoot, "ml", "output");
+
+    // --- Fix #4: Write outputs to userData instead of source tree ---
+    const outputDir = path.join(app.getPath("userData"), "ml", "output");
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // --- Fix #5: Probe for python3 / python instead of hard-coding ---
+    const pythonCmd = findPython();
+    if (!pythonCmd) {
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr:
+          "Python interpreter not found. Please install Python 3 and ensure " +
+          "python3 or python is available on your system PATH.",
+      };
+    }
 
     return await new Promise((resolve) => {
       const args = [
@@ -52,7 +91,7 @@ app.whenReady().then(() => {
         args.push("--selected-folder", selectedFolder);
       }
 
-      const child = spawn("python", args, {
+      const child = spawn(pythonCmd, args, {
         cwd: projectRoot,
         shell: false,
       });
