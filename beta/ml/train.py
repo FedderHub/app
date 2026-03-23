@@ -30,6 +30,12 @@ def load_dataset(csv_path: Path):
             )
             labels.append(float(row["label"]))
 
+    if len(features) == 0:
+        raise ValueError(
+            "Training dataset is empty. Ensure the CSV file contains at least "
+            "one data row before training."
+        )
+
     x_tensor = torch.tensor(features, dtype=torch.float32)
     y_tensor = torch.tensor(labels, dtype=torch.float32).unsqueeze(1)
     return TensorDataset(x_tensor, y_tensor)
@@ -37,6 +43,7 @@ def load_dataset(csv_path: Path):
 
 def train_model(dataset: TensorDataset, epochs: int):
     loader = DataLoader(dataset, batch_size=4, shuffle=True)
+
     model = nn.Sequential(
         nn.Linear(4, 8),
         nn.ReLU(),
@@ -63,6 +70,12 @@ def train_model(dataset: TensorDataset, epochs: int):
             predictions = (outputs >= 0.5).float()
             correct_predictions += (predictions == batch_labels).sum().item()
             total_examples += len(batch_inputs)
+
+        if total_examples == 0:
+            raise ValueError(
+                "Training dataset is empty. Ensure the CSV file contains at least "
+                "one data row before training."
+            )
 
         accuracy = correct_predictions / total_examples
         average_loss = epoch_loss / total_examples
@@ -106,6 +119,7 @@ def main():
     )
 
     dataset = load_dataset(data_path)
+
     training_inputs = dataset.tensors[0].clone()
     training_labels = dataset.tensors[1].clone()
     training_dataset = TensorDataset(training_inputs, training_labels)
