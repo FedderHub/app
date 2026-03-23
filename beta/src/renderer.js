@@ -35,17 +35,28 @@ form.addEventListener("submit", async (event) => {
   setStatus("Training", "warning");
   setLog("Launching local training worker...");
 
-  const result = await window.betaClient.startTraining(payload);
-  const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join("\n");
+  try {
+    const result = await window.betaClient.startTraining(payload);
+    const combinedOutput = [result.stdout, result.stderr]
+      .filter(Boolean)
+      .join("\n");
 
-  if (result.ok) {
-    setStatus("Completed", "success");
-    setLog(combinedOutput || "Training finished successfully.");
-  } else {
+    if (result.ok) {
+      setStatus("Completed", "success");
+      setLog(combinedOutput || "Training finished successfully.");
+    } else {
+      setStatus("Failed", "error");
+      setLog(combinedOutput || "Training failed without additional output.");
+    }
+  } catch (error) {
     setStatus("Failed", "error");
-    setLog(combinedOutput || "Training failed without additional output.");
+    setLog(
+      error && error.message
+        ? `Training failed to start: ${error.message}`
+        : "Training failed to start due to an unexpected error."
+    );
+  } finally {
+    startButton.disabled = false;
+    pickFolderButton.disabled = false;
   }
-
-  startButton.disabled = false;
-  pickFolderButton.disabled = false;
 });
