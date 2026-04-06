@@ -1,10 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from app.db import engine, SessionLocal
+from app.db import engine
 from app import models
+from app.routers import auth, jobs
 
-app = FastAPI(title="FederHub Alpha API")
+# Create all tables on startup
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title="FederHub Alpha API",
+    description="Phase 2 – JWT Auth + Job Management",
+    version="2.0.0",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,41 +21,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-models.Base.metadata.create_all(bind=engine)
+# ── Routers ───────────────────────────────────────────────────────────────────
+app.include_router(auth.router)
+app.include_router(jobs.router)
 
+
+# ── Health & root ─────────────────────────────────────────────────────────────
 @app.get("/")
 def root():
-    return {"message": "FederHub Alpha backend is running"}
+    return {"message": "FederHub Alpha API v2 is running"}
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-@app.get("/organizations")
-def get_organizations():
-    db: Session = SessionLocal()
-    try:
-        orgs = db.query(models.Organization).all()
-        return [
-            {
-                "id": org.id,
-                "name": org.name,
-                "created_at": org.created_at
-            }
-            for org in orgs
-        ]
-    finally:
-        db.close()
-
-@app.get("/users")
-def get_users():
-    return [
-        {"id": 1, "email": "admin@federhub.com", "role": "platform_admin", "status": "active"},
-        {"id": 2, "email": "ml@federhub.com", "role": "ml_engineer", "status": "active"},
-    ]
-
-@app.get("/jobs")
-def get_jobs():
-    return [
-        {"id": 1, "job_name": "Round-Test-Job", "status": "draft"},
-    ]
