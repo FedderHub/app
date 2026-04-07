@@ -1,5 +1,5 @@
 .DS_Store
-
+**/.DS_Store
 # Environment variables — NEVER commit credentials
 .env
 .env.*
