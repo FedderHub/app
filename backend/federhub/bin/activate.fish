@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV "/Users/naman/1)Projects/NYU projects/Federhub-alpha/Backend/federhub"
+set -gx VIRTUAL_ENV "/Users/naman/1)Projects/NYU projects/app/backend/federhub"
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/bin" $PATH

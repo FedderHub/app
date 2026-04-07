@@ -15,13 +15,17 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
+
     try {
       const res = await client.post("/auth/login", form);
       localStorage.setItem("token", res.data.access_token);
-      localStorage.setItem("user", JSON.stringify({ role: res.data.role, id: res.data.user_id }));
+      localStorage.setItem(
+        "user",
+        JSON.stringify({ role: res.data.role, id: res.data.user_id })
+      );
       navigate("/dashboard");
     } catch (err) {
-      setError(err.response?.data?.detail || "Login failed. Please try again.");
+      setError(err.response?.data?.detail || "Incorrect email or password.");
     } finally {
       setLoading(false);
     }
