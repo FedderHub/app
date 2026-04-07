@@ -7,7 +7,6 @@ const client = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Attach JWT token to every request automatically
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -16,15 +15,23 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-// If the server returns 401, clear local auth state and redirect to login
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    const requestUrl = error.config?.url || "";
+
+    // Do NOT redirect on login/register failures.
+    // Let the page itself show the error message.
+    const isAuthPageRequest =
+      requestUrl.includes("/auth/login") || requestUrl.includes("/auth/register");
+
+    if (status === 401 && !isAuthPageRequest) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       window.location.href = "/login";
     }
+
     return Promise.reject(error);
   }
 );
