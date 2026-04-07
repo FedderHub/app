@@ -1,34 +1,31 @@
-# FederHub Team Beta Phase 1
+# FederHub Team Beta Phase 2
 
-This folder contains a self-contained prototype for Team Beta's Phase 1 scope from the project blueprint.
+This folder contains the current Team Beta Phase 2 edge-node application.
 
 ## What is included
 
-- A basic Electron desktop shell
-- A local folder picker
-- A standalone PyTorch training script
-- A dummy CSV dataset
-- Output artifacts for model weights and a run summary
+- An Electron desktop client for the local operator workflow
+- Dockerized training with a read-only dataset mount
+- PyTorch checkpoint selection and inspection
+- Checkpoint-aware CSV schema validation
+- Synthetic healthcare demo bundles for fracture and tumor detection
 
 ## Folder layout
 
-- `main.js`: Electron main process and IPC handlers
-- `preload.js`: safe bridge from the renderer to Electron APIs
+- `main.js`: Electron main process and Docker execution flow
+- `preload.js`: secure bridge between the renderer and Electron APIs
+- `Dockerfile`: container image for the training worker
+- `requirements.txt`: Python dependencies used inside the container
 - `src/`: desktop UI files
-- `ml/train.py`: local training worker
-- `ml/data/dummy.csv`: demo dataset
-- `ml/output/`: generated weights and run summaries
+- `ml/train.py`: checkpoint-aware training worker
+- `ml/inspect_checkpoint.py`: reads `.pt` metadata to infer dataset requirements
+- `demo-client-data/`: sample datasets and checkpoints for demos
 
 ## Prerequisites
 
 1. Install Node.js and npm.
 2. Install Python 3.
-3. Install PyTorch:
-
-```bash
-pip install torch
-```
-
+3. Install Docker Desktop and ensure the `docker` CLI is available.
 4. Install Electron dependencies from this folder:
 
 ```bash
@@ -41,21 +38,31 @@ npm install
 npm start
 ```
 
-## Run only the Python worker
+## Demo bundles
 
-```bash
-python ml/train.py --data ml/data/dummy.csv --output-dir ml/output
-```
+- `demo-client-data/fracture-detection/`
+  - `fracture_dataset.csv`
+  - `fracture_model.pt`
+- `demo-client-data/tumor-detection/`
+  - `tumor_dataset.csv`
+  - `tumor_model.pt`
+- `demo-client-data/sample_client_data.csv`
+  - `demo-client-data/sample_model.pt`
 
-## Demo flow
+## Desktop flow
 
 1. Launch the Electron app.
-2. Choose a local folder.
-3. Click `Start Local Training`.
-4. Review logs in the output panel.
-5. Check `ml/output/` for `model.pt` and `run_summary.json`.
+2. Enter operator credentials.
+3. Choose a `.pt` checkpoint file.
+4. Choose the matching dataset folder.
+5. Review the inferred dataset requirements in the UI.
+6. Click `Start Training`.
 
-## Phase 1 notes
+## Output artifacts
 
-- The login UI is intentionally local-only and does not call a backend yet.
-- The selected folder is captured for the future Docker-mounting flow in Phase 2.
+The app writes updated weights and a run summary to the Electron user-data output directory. Updated checkpoints are saved as `updated_<original-checkpoint-name>.pt`.
+
+## Notes
+
+- The password field is collected in the UI only; it is not connected to backend authentication in Phase 2.
+- The selected dataset folder is mounted read-only into Docker so source data remains local during training.
