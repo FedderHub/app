@@ -14,8 +14,9 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, nullable=False)
-    role = Column(String, nullable=False)
-    status = Column(String, nullable=False, default="pending")
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="ml_engineer")
+    status = Column(String, nullable=False, default="active")
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -24,5 +25,8 @@ class JobConfiguration(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     job_name = Column(String, nullable=False)
+    round_count = Column(Integer, nullable=False, default=5)
+    local_epochs = Column(Integer, nullable=False, default=3)
     status = Column(String, nullable=False, default="draft")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

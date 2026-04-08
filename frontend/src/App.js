@@ -1,22 +1,40 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import Dashboard from "./pages/Dashboard";
+import CreateJobPage from "./pages/CreateJobPage";
+import PrivateRoute from "./components/PrivateRoute";
 
 function App() {
-  const [health, setHealth] = useState("Loading...");
-
-  useEffect(() => {
-    axios
-      .get("http://127.0.0.1:8000/health")
-      .then((res) => setHealth(res.data.status))
-      .catch(() => setHealth("Backend unreachable"));
-  }, []);
-
   return (
-    <div style={{ padding: "40px", fontFamily: "Arial" }}>
-      <h1>FederHub Alpha Frontend</h1>
-      <p>Phase 1 blank dashboard</p>
-      <p>Backend health: {health}</p>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
+        {/* Protected routes */}
+        <Route
+          path="/dashboard"
+          element={
+            <PrivateRoute>
+              <Dashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/jobs/new"
+          element={
+            <PrivateRoute>
+              <CreateJobPage />
+            </PrivateRoute>
+          }
+        />
+
+        {/* Default redirect */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

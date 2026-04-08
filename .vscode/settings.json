@@ -1,0 +1,20 @@
+{
+    "sqltools.connections": [
+        {
+            "pgOptions": {
+                "ssl": {
+                    "rejectUnauthorized": false
+                }
+            },
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "federhub-db.cq326a2yexwu.us-east-1.rds.amazonaws.com",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "FederHub RDS",
+            "database": "federhub",
+            "username": "postgres",
+            "password": "Naman-aws-master-db"
+        }
+    ]
+}

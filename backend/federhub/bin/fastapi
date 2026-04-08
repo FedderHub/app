@@ -1,5 +1,5 @@
 #!/bin/sh
-'''exec' "/Users/naman/1)Projects/NYU projects/Federhub-alpha/Backend/federhub/bin/python3.11" "$0" "$@"
+'''exec' "/Users/naman/1)Projects/NYU projects/app/backend/federhub/bin/python3.11" "$0" "$@"
 ' '''
 # -*- coding: utf-8 -*-
 import re
