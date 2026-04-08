@@ -1,1 +1,20 @@
 .DS_Store
+**/.DS_Store
+# Environment variables — NEVER commit credentials
+.env
+.env.*
+
+# Local SQLite database
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+federhub/
+
+# Node
+node_modules/
+build/
+npm-debug.log*

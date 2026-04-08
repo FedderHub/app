@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="/Users/naman/1)Projects/NYU projects/Federhub-alpha/Backend/federhub"
+VIRTUAL_ENV="/Users/naman/1)Projects/NYU projects/app/backend/federhub"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
