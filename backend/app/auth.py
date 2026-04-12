@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, Security, status
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
@@ -15,11 +15,15 @@ SECRET_KEY = "federhub-super-secret-key-change-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
 
+# Service-to-service API key used by Team Gamma's gRPC engine to post metrics
+SERVICE_API_KEY = "federhub-gamma-service-key-change-in-production"
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+service_key_header = APIKeyHeader(name="X-Service-Key", auto_error=False)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── DB helper ─────────────────────────────────────────────────────────────────
 
 def get_db():
     db = SessionLocal()
@@ -29,6 +33,8 @@ def get_db():
         db.close()
 
 
+# ── Password helpers ──────────────────────────────────────────────────────────
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -36,6 +42,8 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
+
+# ── JWT helpers ───────────────────────────────────────────────────────────────
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -81,3 +89,31 @@ def require_role(*roles: str):
             )
         return current_user
     return role_checker
+
+
+# ── Service key guard (for Team Gamma's gRPC engine) ─────────────────────────
+
+def verify_service_key(x_service_key: Optional[str] = Security(service_key_header)):
+    """
+    Validates the X-Service-Key header sent by Team Gamma's aggregation engine.
+    Gamma posts round metrics and updates job status without a user JWT.
+    """
+    if x_service_key != SERVICE_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing service API key.",
+        )
+    return x_service_key
+
+
+# ── Lookup user by email OR username ─────────────────────────────────────────
+
+def lookup_user(identifier: str, db: Session) -> Optional[models.User]:
+    """
+    Phase 3: find a user by email (web dashboard) or by username (Beta Electron app).
+    Beta sends username as the login identifier; the web dashboard sends email.
+    """
+    user = db.query(models.User).filter(models.User.email == identifier).first()
+    if user:
+        return user
+    return db.query(models.User).filter(models.User.username == identifier).first()
