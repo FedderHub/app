@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -8,10 +8,12 @@ from datetime import datetime
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
+    username: Optional[str] = None        # Phase 3: Beta Electron login identifier
     role: Optional[str] = "ml_engineer"
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None      # Web dashboard login (by email)
+    username: Optional[str] = None        # Electron app login (by username)
     password: str
 
 class TokenResponse(BaseModel):
@@ -23,6 +25,7 @@ class TokenResponse(BaseModel):
 class UserOut(BaseModel):
     id: int
     email: str
+    username: Optional[str]
     role: str
     status: str
     created_at: datetime
@@ -45,6 +48,25 @@ class JobOut(BaseModel):
     local_epochs: int
     status: str
     created_by: Optional[int]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── Round Metrics (posted by Team Gamma's gRPC engine) ────────────────────────
+
+class RoundMetricCreate(BaseModel):
+    round_number: int
+    global_accuracy: float
+    num_clients: int = 0
+
+class RoundMetricOut(BaseModel):
+    id: int
+    job_id: int
+    round_number: int
+    global_accuracy: float
+    num_clients: int
     created_at: datetime
 
     class Config:
