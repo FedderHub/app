@@ -1,0 +1,15 @@
+{
+  "name": "federhub-electron-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase 2 Team Beta prototype for the FederHub edge client.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "train": "python ml/train.py --data demo-client-data/sample_client_data.csv --checkpoint demo-client-data/sample_model.pt --output-dir ml/output",
+    "docker:build": "docker build -t federhub-beta-trainer ."
+  },
+  "devDependencies": {
+    "electron": "^37.2.0"
+  }
+}

@@ -93,6 +93,78 @@ def federated_average(
     return global_weights
 
 
+def federated_average_state_dicts(
+    client_state_dicts: List[dict],
+    sample_counts: List[int],
+) -> dict:
+    """
+    Compute Federated Average over structured PyTorch state dicts.
+
+    Each state dict maps layer names to lists of floats (flattened tensors).
+    Aggregation is performed per-layer with weighting proportional to each
+    client's local dataset size.
+
+    Args:
+        client_state_dicts: List of dicts, where each dict maps
+            layer_name -> {"data": List[float], "shape": List[int]}.
+        sample_counts: Number of training samples each client used locally.
+
+    Returns:
+        dict: Aggregated global state dict with the same structure.
+
+    Raises:
+        ValueError: If inputs are mismatched or empty.
+    """
+    if not client_state_dicts or not sample_counts:
+        raise ValueError("client_state_dicts and sample_counts must not be empty.")
+
+    if len(client_state_dicts) != len(sample_counts):
+        raise ValueError(
+            f"Mismatch: {len(client_state_dicts)} state dicts "
+            f"but {len(sample_counts)} sample counts."
+        )
+
+    if any(n < 0 for n in sample_counts):
+        raise ValueError("Sample counts must be non-negative.")
+
+    n_total = sum(sample_counts)
+    if n_total == 0:
+        raise ValueError("Total sample count must be greater than zero.")
+
+    # All clients must have the same layer names
+    reference_layers = list(client_state_dicts[0].keys())
+    for i, sd in enumerate(client_state_dicts):
+        if list(sd.keys()) != reference_layers:
+            raise ValueError(
+                f"Client {i} has different layer names than client 0. "
+                f"Expected {reference_layers}, got {list(sd.keys())}"
+            )
+
+    global_state_dict = {}
+    for layer_name in reference_layers:
+        ref_data = client_state_dicts[0][layer_name]["data"]
+        n_params = len(ref_data)
+        aggregated = [0.0] * n_params
+
+        for sd, n_k in zip(client_state_dicts, sample_counts):
+            contribution = n_k / n_total
+            layer_data = sd[layer_name]["data"]
+            if len(layer_data) != n_params:
+                raise ValueError(
+                    f"Layer '{layer_name}' size mismatch: expected {n_params}, "
+                    f"got {len(layer_data)}"
+                )
+            for j in range(n_params):
+                aggregated[j] += contribution * layer_data[j]
+
+        global_state_dict[layer_name] = {
+            "data": aggregated,
+            "shape": list(client_state_dicts[0][layer_name]["shape"]),
+        }
+
+    return global_state_dict
+
+
 def run_mock_aggregation_round(round_number: int = 1) -> None:
     """
     Simulate a single federated aggregation round with hardcoded client data.
