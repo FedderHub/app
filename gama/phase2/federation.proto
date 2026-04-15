@@ -1,4 +1,6 @@
 // federation.proto
+// Phase 3: Upgraded to support structured PyTorch state_dict payloads
+// while maintaining backward compatibility with Phase 2 flat-array mode.
 syntax = "proto3";
 
 package federation;
@@ -9,11 +11,21 @@ service Aggregator {
   rpc SubmitWeightUpdate (WeightUpdate) returns (UpdateAck) {}
 }
 
+// Represents a single named tensor from a PyTorch state_dict
+// e.g. layer_name="0.weight", shape=[8,4], data=[...flattened values...]
+message TensorData {
+  string layer_name = 1;
+  repeated int32 shape = 2;
+  repeated float data = 3;
+}
+
 // The payload sent by the client
 message WeightUpdate {
   string client_id = 1;
   int32 sample_count = 2;
-  repeated float weights = 3; // Repeated float handles the tensor arrays
+  repeated float weights = 3;        // Phase 2 flat mode (backward compat)
+  repeated TensorData layers = 4;    // Phase 3 structured state_dict mode
+  string model_architecture = 5;     // Optional model description
 }
 
 // The server's acknowledgment response
