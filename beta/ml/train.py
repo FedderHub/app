@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 
 try:
@@ -168,7 +169,7 @@ def flush_sensitive_tensors(*tensors):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="FederHub Team Beta Phase 2 trainer")
+    parser = argparse.ArgumentParser(description="FederHub Team Beta Phase 2/3 trainer")
     parser.add_argument("--data", help="Path to a CSV dataset")
     parser.add_argument(
         "--input-dir",
@@ -186,6 +187,16 @@ def main():
     )
     parser.add_argument("--operator", default="", help="Client operator username")
     parser.add_argument("--epochs", type=int, default=8, help="Number of local training epochs")
+    parser.add_argument(
+        "--server",
+        default="",
+        help="Phase 3: Gamma gRPC server address to stream weights to (e.g. localhost:50051)",
+    )
+    parser.add_argument(
+        "--client-id",
+        default="",
+        help="Phase 3: Identifier for this edge node (e.g. 'Hospital A')",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir).resolve() if args.input_dir else None
@@ -251,6 +262,29 @@ def main():
         "Memory flush step completed for in-process training tensors. Only model weights remain.",
         flush=True,
     )
+
+    # --- Phase 3: Stream weights to Gamma's aggregation server ---
+    if args.server:
+        client_id = args.client_id or args.operator or "anonymous-client"
+        print(f"\n[PHASE 3] Streaming trained weights to Gamma server at {args.server}...", flush=True)
+        try:
+            # Import the sender module from the beta directory
+            sender_dir = Path(__file__).resolve().parent.parent
+            sys.path.insert(0, str(sender_dir))
+            from grpc_weight_sender import send_weights
+
+            success = send_weights(
+                pt_path=str(weights_path),
+                summary_path=str(metadata_path),
+                server_address=args.server,
+                client_id=client_id,
+            )
+            if success:
+                print("[PHASE 3] Weight streaming complete. Only mathematical updates were transmitted.", flush=True)
+            else:
+                print("[PHASE 3] Weight streaming failed. Weights are still saved locally.", flush=True)
+        except Exception as e:
+            print(f"[PHASE 3] Weight streaming error: {e}. Weights are still saved locally.", flush=True)
 
 
 if __name__ == "__main__":
