@@ -3,6 +3,9 @@ const path = require("path");
 const { spawn, execFileSync } = require("child_process");
 const fs = require("fs");
 
+const DEFAULT_ALPHA_API_URL = "http://127.0.0.1:8000";
+const DEFAULT_GAMMA_SERVER = "host.docker.internal:50051";
+
 function findPython() {
   for (const cmd of ["python3", "python"]) {
     try {
@@ -117,6 +120,9 @@ function buildTrainingPayload(payload) {
     password: safePayload.password || "",
     checkpointPath: safePayload.checkpointPath || "",
     selectedFolder: safePayload.selectedFolder || "",
+    alphaApiUrl: safePayload.alphaApiUrl || DEFAULT_ALPHA_API_URL,
+    gammaServer: safePayload.gammaServer || "",
+    clientId: safePayload.clientId || "",
   };
 }
 
@@ -138,6 +144,142 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, "src", "index.html"));
+}
+
+function normalizeApiBaseUrl(url) {
+  const trimmed = (url || DEFAULT_ALPHA_API_URL).trim().replace(/\/+$/, "");
+  return trimmed || DEFAULT_ALPHA_API_URL;
+}
+
+function getAuthSessionPath() {
+  return path.join(app.getPath("userData"), "auth", "session.json");
+}
+
+function readAuthSession() {
+  const sessionPath = getAuthSessionPath();
+  if (!fs.existsSync(sessionPath)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(sessionPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeAuthSession(session) {
+  const sessionPath = getAuthSessionPath();
+  ensureDir(path.dirname(sessionPath));
+  fs.writeFileSync(sessionPath, JSON.stringify(session, null, 2), "utf-8");
+}
+
+function clearAuthSession() {
+  const sessionPath = getAuthSessionPath();
+  if (fs.existsSync(sessionPath)) {
+    fs.unlinkSync(sessionPath);
+  }
+}
+
+async function authenticateWithAlpha({ username, password, alphaApiUrl }) {
+  const email = (username || "").trim();
+  if (!email) {
+    return {
+      ok: false,
+      summary: "Enter the operator email before authenticating with Alpha.",
+    };
+  }
+
+  if (!password) {
+    return {
+      ok: false,
+      summary: "Enter the operator password before authenticating with Alpha.",
+    };
+  }
+
+  const apiBaseUrl = normalizeApiBaseUrl(alphaApiUrl);
+
+  let loginResponse;
+  try {
+    loginResponse = await fetch(`${apiBaseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      summary: `Unable to reach Alpha at ${apiBaseUrl}. ${error.message}`,
+    };
+  }
+
+  let loginBody = {};
+  try {
+    loginBody = await loginResponse.json();
+  } catch {
+    loginBody = {};
+  }
+
+  if (!loginResponse.ok || !loginBody.access_token) {
+    return {
+      ok: false,
+      summary:
+        loginBody.detail ||
+        `Authentication failed with status ${loginResponse.status}.`,
+    };
+  }
+
+  let profileResponse;
+  try {
+    profileResponse = await fetch(`${apiBaseUrl}/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${loginBody.access_token}`,
+      },
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      summary: `Authentication succeeded, but profile lookup failed: ${error.message}`,
+    };
+  }
+
+  let profileBody = {};
+  try {
+    profileBody = await profileResponse.json();
+  } catch {
+    profileBody = {};
+  }
+
+  if (!profileResponse.ok) {
+    return {
+      ok: false,
+      summary:
+        profileBody.detail ||
+        `Authentication succeeded, but profile lookup failed with status ${profileResponse.status}.`,
+    };
+  }
+
+  const session = {
+    apiBaseUrl,
+    accessToken: loginBody.access_token,
+    tokenType: loginBody.token_type || "bearer",
+    role: loginBody.role || profileBody.role || "",
+    userId: loginBody.user_id || profileBody.id || null,
+    email: profileBody.email || email,
+    status: profileBody.status || "active",
+    authenticatedAt: new Date().toISOString(),
+  };
+
+  writeAuthSession(session);
+
+  return {
+    ok: true,
+    summary: `Authenticated with Alpha as ${session.email} (${session.role || "user"}).`,
+    session,
+  };
 }
 
 async function inspectCheckpoint(checkpointPath) {
@@ -341,13 +483,51 @@ app.whenReady().then(() => {
     return await inspectCheckpoint(checkpointPath);
   });
 
+  ipcMain.handle("auth:get-session", async () => {
+    return readAuthSession();
+  });
+
+  ipcMain.handle("auth:login", async (_event, payload = {}) => {
+    return await authenticateWithAlpha(buildTrainingPayload(payload));
+  });
+
+  ipcMain.handle("auth:logout", async () => {
+    clearAuthSession();
+    return { ok: true };
+  });
+
   ipcMain.handle("training:validate-inputs", async (_event, payload = {}) => {
     return await validateTrainingInputs(payload);
   });
 
   ipcMain.handle("training:start", async (event, payload = {}) => {
-    const { username, checkpointPath, selectedFolder } = buildTrainingPayload(payload);
+    const {
+      username,
+      checkpointPath,
+      selectedFolder,
+      alphaApiUrl,
+      gammaServer,
+      clientId,
+    } = buildTrainingPayload(payload);
     const sender = event.sender;
+
+    emitProgress(sender, "auth", "running", "Authenticating with Alpha.");
+    const authResult = await authenticateWithAlpha({
+      username,
+      password: payload.password || "",
+      alphaApiUrl,
+    });
+    if (!authResult.ok) {
+      emitProgress(sender, "auth", "failed", authResult.summary);
+      return {
+        ok: false,
+        code: null,
+        stdout: "",
+        stderr: authResult.summary,
+        auth: authResult,
+      };
+    }
+    emitProgress(sender, "auth", "completed", authResult.summary);
 
     emitProgress(sender, "inspect", "running", "Inspecting checkpoint and dataset.");
     const validation = await validateTrainingInputs(payload);
@@ -363,8 +543,9 @@ app.whenReady().then(() => {
     }
     emitProgress(sender, "inspect", "completed", "Checkpoint and dataset validated.");
 
-    const projectRoot = __dirname;
-    const dockerfilePath = path.join(projectRoot, "Dockerfile");
+    const betaRoot = __dirname;
+    const projectRoot = path.resolve(betaRoot, "..");
+    const dockerfilePath = path.join(betaRoot, "Dockerfile");
     const outputDir = path.join(app.getPath("userData"), "ml", "output");
     ensureDir(outputDir);
 
@@ -429,9 +610,20 @@ app.whenReady().then(() => {
       args.push("--operator", username);
     }
 
+    const normalizedGammaServer = (gammaServer || "").trim();
+    if (normalizedGammaServer) {
+      args.push("--server", normalizedGammaServer);
+      args.push(
+        "--client-id",
+        (clientId || authResult.session?.email || username || "anonymous-client").trim()
+      );
+    }
+
     let hasMarkedLoad = false;
     let hasMarkedTrain = false;
     let hasMarkedSave = false;
+    let hasMarkedStream = false;
+    let streamFailed = false;
 
     emitProgress(sender, "load", "running", "Loading checkpoint and dataset.");
     const runResult = await runStreamingCommand(dockerCmd, args, {
@@ -453,6 +645,19 @@ app.whenReady().then(() => {
             emitProgress(sender, "train", "completed", "Training completed.");
             emitProgress(sender, "save", "running", "Saving updated artifacts.");
             hasMarkedSave = true;
+          } else if (line.startsWith("[PHASE 3] Streaming trained weights")) {
+            emitProgress(sender, "stream", "running", "Streaming mathematical updates to Gamma.");
+            hasMarkedStream = true;
+          } else if (line.includes("[PHASE 3] Weight streaming complete")) {
+            emitProgress(sender, "stream", "completed", "Model updates were sent to Gamma.");
+            hasMarkedStream = true;
+          } else if (
+            line.includes("[PHASE 3] Weight streaming failed") ||
+            line.includes("[PHASE 3] Weight streaming error")
+          ) {
+            emitProgress(sender, "stream", "failed", "Model updates could not be sent to Gamma.");
+            hasMarkedStream = true;
+            streamFailed = true;
           }
         }
       },
@@ -476,14 +681,32 @@ app.whenReady().then(() => {
     emitProgress(sender, "load", "completed", "Dataset and checkpoint loaded.");
     emitProgress(sender, "train", "completed", "Training completed.");
     emitProgress(sender, "save", "completed", "Artifacts saved successfully.");
+    if (normalizedGammaServer && !hasMarkedStream) {
+      emitProgress(sender, "stream", "failed", "Gamma streaming did not report a final status.");
+      streamFailed = true;
+    } else if (!normalizedGammaServer) {
+      emitProgress(sender, "stream", "pending", "Gamma streaming is not configured for this run.");
+    }
 
     const runSummary = readRunSummary(outputDir);
     return {
       ...runResult,
+      ok: runResult.ok && !streamFailed,
       validation,
-      summary: runSummary,
+      auth: authResult,
+      summary: runSummary
+        ? {
+            ...runSummary,
+            gammaStreamStatus: normalizedGammaServer
+              ? streamFailed
+                ? "Failed"
+                : "Completed"
+              : "Not configured",
+          }
+        : null,
       stdout: [
         "Training environment ready.",
+        authResult.summary,
         `Loaded checkpoint: ${checkpointPath}`,
         `Mounted dataset folder read-only: ${selectedFolder}`,
         `Artifacts will be written to: ${outputDir}`,
