@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FederHub Beta Client</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">FederHub | Team Beta | Phase 2</p>
+        <h1>Edge Node Sandbox</h1>
+        <p class="lede">
+          Secure local training with a read-only data mount and checkpoint-based
+          model execution inside a containerized runtime.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Client Operator Console</h2>
+            <p>
+              Provide operator credentials, select a checkpoint, and choose the
+              dataset folder before starting training.
+            </p>
+          </div>
+          <span class="badge">Sandbox Mode</span>
+        </div>
+
+        <form id="client-form" class="grid">
+          <label>
+            <span>Operator Name</span>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              placeholder="client.operator"
+            />
+          </label>
+
+          <label>
+            <span>Password</span>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Enter password"
+            />
+          </label>
+
+          <label class="wide">
+            <span>PyTorch Checkpoint (.pt)</span>
+            <div class="folder-row">
+              <input
+                id="checkpoint-path"
+                type="text"
+                readonly
+                placeholder="Choose a .pt checkpoint file"
+              />
+              <button id="pick-model-file" type="button" class="secondary">
+                Choose Checkpoint
+              </button>
+            </div>
+          </label>
+
+          <label class="wide">
+            <span>Selected Local Data Folder</span>
+            <div class="folder-row">
+              <input
+                id="selected-folder"
+                type="text"
+                readonly
+                placeholder="Choose a folder containing the training dataset"
+              />
+              <button id="pick-folder" type="button" class="secondary">
+                Choose Folder
+              </button>
+            </div>
+          </label>
+
+          <section class="wide info-card">
+            <h3>Dataset Requirements</h3>
+            <p id="dataset-requirements-copy">
+              Select a checkpoint file to load the expected dataset structure.
+            </p>
+            <p id="dataset-requirements-columns" class="mono"></p>
+            <p id="checkpoint-requirements" class="subtle">
+              The expected CSV schema is shown after checkpoint inspection.
+            </p>
+            <p class="subtle">
+              The selected data folder is mounted read-only so source data
+              remains local throughout training.
+            </p>
+          </section>
+
+          <div class="wide actions">
+            <button id="validate-inputs" type="button" class="secondary">
+              Validate Inputs
+            </button>
+            <button id="start-training" type="submit">Start Training</button>
+            <p class="hint">
+              Training uses the selected checkpoint and dataset folder inside
+              the containerized runtime.
+            </p>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel output-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Run Output</h2>
+            <p>Execution details and result summaries appear here.</p>
+          </div>
+          <span id="status-pill" class="badge muted">Idle</span>
+        </div>
+
+        <pre id="log-output" class="terminal">
+Ready. Select a checkpoint and dataset folder to begin.</pre
+        >
+
+        <section class="summary-grid">
+          <article class="summary-card">
+            <h3>Validation</h3>
+            <p id="validation-summary" class="subtle">
+              Input validation has not been run yet.
+            </p>
+          </article>
+          <article class="summary-card">
+            <h3>Progress</h3>
+            <ul id="progress-list" class="progress-list">
+              <li data-step="inspect"><span>Inspect inputs</span><strong>Pending</strong></li>
+              <li data-step="build"><span>Build container</span><strong>Pending</strong></li>
+              <li data-step="load"><span>Load data</span><strong>Pending</strong></li>
+              <li data-step="train"><span>Train model</span><strong>Pending</strong></li>
+              <li data-step="save"><span>Save artifacts</span><strong>Pending</strong></li>
+            </ul>
+          </article>
+          <article class="summary-card wide-card">
+            <h3>Result Summary</h3>
+            <dl id="result-summary" class="result-summary">
+              <div><dt>Updated model</dt><dd>Not available yet</dd></div>
+              <div><dt>Run summary</dt><dd>Not available yet</dd></div>
+              <div><dt>Checkpoint</dt><dd>Not available yet</dd></div>
+              <div><dt>Dataset</dt><dd>Not available yet</dd></div>
+            </dl>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
