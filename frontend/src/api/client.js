@@ -8,7 +8,7 @@ const client = axios.create({
 });
 
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -27,6 +27,8 @@ client.interceptors.response.use(
       requestUrl.includes("/auth/login") || requestUrl.includes("/auth/register");
 
     if (status === 401 && !isAuthPageRequest) {
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       window.location.href = "/login";

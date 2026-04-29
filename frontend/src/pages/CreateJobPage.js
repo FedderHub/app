@@ -5,11 +5,12 @@ import Navbar from "../components/Navbar";
 
 export default function CreateJobPage() {
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const user = JSON.parse(sessionStorage.getItem("user") || "{}");
   const [form, setForm] = useState({
     job_name: "",
     round_count: 5,
     local_epochs: 3,
+    expected_clients: 1,
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -36,6 +37,10 @@ export default function CreateJobPage() {
     }
     if (form.round_count < 1 || form.local_epochs < 1) {
       setError("Round count and local epochs must be at least 1.");
+      return;
+    }
+    if (form.expected_clients < 1) {
+      setError("Expected clients must be at least 1.");
       return;
     }
 
@@ -113,12 +118,30 @@ export default function CreateJobPage() {
               </p>
             </div>
 
+            <div style={styles.field}>
+              <label style={styles.label}>Expected Clients Per Round</label>
+              <input
+                style={styles.input}
+                type="number"
+                name="expected_clients"
+                value={form.expected_clients}
+                onChange={handleChange}
+                min={1}
+                max={25}
+              />
+              <p style={styles.hint}>
+                Aggregation runs automatically after this many Client Operators
+                submit local updates for the active round.
+              </p>
+            </div>
+
             {/* Summary preview */}
             <div style={styles.summary}>
               <span style={styles.summaryLabel}>Summary:</span>
               <span style={styles.summaryText}>
                 <strong style={styles.highlight}>{form.round_count}</strong> rounds ×{" "}
-                <strong style={styles.highlight}>{form.local_epochs}</strong> local epochs per client
+                <strong style={styles.highlight}>{form.local_epochs}</strong> local epochs ×{" "}
+                <strong style={styles.highlight}>{form.expected_clients}</strong> clients
               </span>
             </div>
 

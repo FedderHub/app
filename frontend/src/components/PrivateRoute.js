@@ -5,6 +5,6 @@ import { Navigate } from "react-router-dom";
  * Usage: <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
  */
 export default function PrivateRoute({ children }) {
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
   return token ? children : <Navigate to="/login" replace />;
 }

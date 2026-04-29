@@ -20,13 +20,15 @@ const ROLE_LABELS = {
 export default function Dashboard() {
   const navigate = useNavigate();
   const storedUser = useMemo(
-    () => JSON.parse(localStorage.getItem("user") || "{}"),
+    () => JSON.parse(sessionStorage.getItem("user") || "{}"),
     []
   );
   const [user, setUser] = useState(storedUser);
   const [jobs, setJobs] = useState([]);
   const [users, setUsers] = useState([]);
   const [metricsByJob, setMetricsByJob] = useState({});
+  const [submissionsByJob, setSubmissionsByJob] = useState({});
+  const [submissionForms, setSubmissionForms] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -49,7 +51,7 @@ export default function Dashboard() {
         status: profile.status,
       };
       setUser(nextUser);
-      localStorage.setItem("user", JSON.stringify(nextUser));
+      sessionStorage.setItem("user", JSON.stringify(nextUser));
 
       const jobsRes = await client.get("/jobs/");
       setJobs(jobsRes.data);
@@ -65,6 +67,27 @@ export default function Dashboard() {
         })
       );
       setMetricsByJob(Object.fromEntries(metricPairs));
+
+      const submissionPairs = await Promise.all(
+        jobsRes.data.map(async (job) => {
+          try {
+            const submissionsRes = await client.get(`/jobs/${job.id}/submissions`);
+            return [job.id, submissionsRes.data];
+          } catch {
+            return [job.id, []];
+          }
+        })
+      );
+      setSubmissionsByJob(Object.fromEntries(submissionPairs));
+      setSubmissionForms((current) => {
+        const next = { ...current };
+        for (const job of jobsRes.data) {
+          if (!next[job.id]) {
+            next[job.id] = buildDefaultSubmissionForm(profile.email, job);
+          }
+        }
+        return next;
+      });
 
       if (profile.role === "platform_admin") {
         const usersRes = await client.get("/auth/users");
@@ -113,6 +136,40 @@ export default function Dashboard() {
       setActionMessage(`Deleted job "${jobName}".`);
     } catch (err) {
       setActionMessage(err.response?.data?.detail || "Failed to delete job.");
+    }
+  };
+
+  const updateSubmissionForm = (jobId, field, value) => {
+    setSubmissionForms((current) => ({
+      ...current,
+      [jobId]: {
+        ...(current[jobId] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const submitClientUpdate = async (job) => {
+    const form = submissionForms[job.id] || buildDefaultSubmissionForm(user.email, job);
+    const weights = parseWeights(form.weights);
+    if (weights.length === 0) {
+      setActionMessage("Enter at least one numeric model weight.");
+      return;
+    }
+
+    setActionMessage("");
+    try {
+      const res = await client.post(`/jobs/${job.id}/submissions`, {
+        client_label: form.client_label || user.email,
+        sample_count: Number(form.sample_count),
+        accuracy: form.accuracy === "" ? null : Number(form.accuracy),
+        loss: form.loss === "" ? null : Number(form.loss),
+        weights,
+      });
+      setActionMessage(res.data.message);
+      await loadDashboard();
+    } catch (err) {
+      setActionMessage(err.response?.data?.detail || "Failed to submit client update.");
     }
   };
 
@@ -177,8 +234,14 @@ export default function Dashboard() {
         <div style={styles.grid}>
           {jobs.map((job) => {
             const metrics = metricsByJob[job.id] || [];
+            const submissions = submissionsByJob[job.id] || [];
             const latestMetric = metrics[metrics.length - 1];
             const isStarted = job.status === "running" || job.status === "scheduled";
+            const isCompleted = job.status === "completed";
+            const activeRound = job.current_round || 0;
+            const activeRoundSubmissions = submissions.filter(
+              (item) => item.round_number === activeRound && item.status === "accepted"
+            );
 
             return (
               <article key={job.id} style={styles.card}>
@@ -199,12 +262,23 @@ export default function Dashboard() {
 
                 <div style={styles.metaStack}>
                   <span>Created by: <strong>{job.creator_email || "Unknown"}</strong></span>
+                  <span>Active round: <strong>{job.status === "completed" ? "Complete" : activeRound || "Not started"}</strong></span>
+                  <span>Expected clients: <strong>{job.expected_clients}</strong></span>
+                  <span>Pending updates: <strong>{isCompleted ? "Complete" : `${activeRoundSubmissions.length}/${job.expected_clients}`}</strong></span>
                   <span>Rounds: <strong>{job.round_count}</strong></span>
                   <span>Local epochs: <strong>{job.local_epochs}</strong></span>
                   <span>Completed rounds: <strong>{metrics.length}</strong></span>
                   <span>Participating clients: <strong>{latestMetric?.num_clients ?? "N/A"}</strong></span>
                   <span>Total samples: <strong>{latestMetric?.total_samples ?? "N/A"}</strong></span>
                 </div>
+
+                {isCompleted && (
+                  <CompletedResults
+                    job={job}
+                    metrics={metrics}
+                    submissions={submissions}
+                  />
+                )}
 
                 <p style={styles.cardDate}>
                   Created: {new Date(job.created_at).toLocaleString()}
@@ -213,12 +287,20 @@ export default function Dashboard() {
                 {canManageJobs ? (
                   <div style={styles.cardActions}>
                     <button
-                      style={styles.startBtn}
-                      onClick={() => startJob(job.id)}
-                      disabled={isStarted}
+                      style={styles.detailBtn}
+                      onClick={() => navigate(`/jobs/${job.id}`)}
                     >
-                      {isStarted ? "Started" : "Start Orchestration"}
+                      View Details
                     </button>
+                    {!isCompleted && (
+                      <button
+                        style={styles.startBtn}
+                        onClick={() => startJob(job.id)}
+                        disabled={isStarted}
+                      >
+                        {isStarted ? "Started" : "Start Orchestration"}
+                      </button>
+                    )}
                     <button
                       style={styles.deleteBtn}
                       onClick={() => deleteJob(job.id, job.job_name)}
@@ -227,9 +309,23 @@ export default function Dashboard() {
                     </button>
                   </div>
                 ) : (
-                  <p style={styles.clientNote}>
-                    Use the desktop client with the Alpha API and Gamma server to participate.
-                  </p>
+                  <>
+                    {job.results_published && (
+                      <button
+                        style={styles.detailBtn}
+                        onClick={() => navigate(`/jobs/${job.id}`)}
+                      >
+                        View Published Results
+                      </button>
+                    )}
+                    <ClientSubmissionPanel
+                      job={job}
+                      form={submissionForms[job.id] || buildDefaultSubmissionForm(user.email, job)}
+                      submissions={submissions}
+                      onChange={(field, value) => updateSubmissionForm(job.id, field, value)}
+                      onSubmit={() => submitClientUpdate(job)}
+                    />
+                  </>
                 )}
               </article>
             );
@@ -240,25 +336,206 @@ export default function Dashboard() {
   );
 }
 
+function buildDefaultSubmissionForm(email, job) {
+  const seed = Number(job?.id || 1) + Number(job?.current_round || 1);
+  return {
+    client_label: email || "Client Node",
+    sample_count: 100,
+    accuracy: 0.86,
+    loss: 0.24,
+    weights: [
+      0.1 + seed * 0.01,
+      0.2 + seed * 0.01,
+      0.3 + seed * 0.01,
+      0.4 + seed * 0.01,
+    ]
+      .map((value) => value.toFixed(3))
+      .join(", "),
+  };
+}
+
+function parseWeights(text) {
+  return String(text || "")
+    .split(/[,\s]+/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map(Number)
+    .filter((value) => Number.isFinite(value));
+}
+
+function parseSnapshot(metric) {
+  if (!metric?.global_weights_snapshot) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(metric.global_weights_snapshot);
+  } catch {
+    return null;
+  }
+}
+
+function downloadJobReport(job, metrics, submissions) {
+  const report = {
+    job,
+    final_metric: metrics[metrics.length - 1] || null,
+    rounds: metrics,
+    submissions,
+    exported_at: new Date().toISOString(),
+  };
+  const blob = new Blob([JSON.stringify(report, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `federhub-job-${job.id}-report.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function ClientOperatorPanel() {
   return (
     <section style={styles.infoPanel}>
       <h3 style={styles.panelTitle}>Client Operator Workspace</h3>
       <div style={styles.operatorGrid}>
         <div>
-          <span style={styles.operatorLabel}>Alpha API</span>
-          <strong style={styles.operatorValue}>http://127.0.0.1:8000</strong>
+          <span style={styles.operatorLabel}>Workflow</span>
+          <strong style={styles.operatorValue}>Choose a running job and submit a local model update.</strong>
         </div>
         <div>
-          <span style={styles.operatorLabel}>Gamma gRPC</span>
-          <strong style={styles.operatorValue}>host.docker.internal:50051</strong>
+          <span style={styles.operatorLabel}>Privacy</span>
+          <strong style={styles.operatorValue}>Only weights, metrics, and sample count are submitted.</strong>
         </div>
         <div>
-          <span style={styles.operatorLabel}>Local app</span>
-          <strong style={styles.operatorValue}>merged/client</strong>
+          <span style={styles.operatorLabel}>Aggregation</span>
+          <strong style={styles.operatorValue}>FedAvg runs automatically when enough clients submit.</strong>
         </div>
       </div>
     </section>
+  );
+}
+
+function CompletedResults({ job, metrics, submissions }) {
+  const finalMetric = metrics[metrics.length - 1];
+  const snapshot = parseSnapshot(finalMetric);
+  const weightsPreview = snapshot?.weights_preview || [];
+
+  return (
+    <section style={styles.resultsBox}>
+      <div style={styles.resultsHeader}>
+        <strong>Final Global Model Ready</strong>
+        <button
+          style={styles.reportBtn}
+          onClick={() => downloadJobReport(job, metrics, submissions)}
+        >
+          Download Report
+        </button>
+      </div>
+      <div style={styles.resultsGrid}>
+        <span>FedAvg rounds: <strong>{metrics.length}</strong></span>
+        <span>Final accuracy: <strong>{formatMetric(finalMetric?.accuracy)}</strong></span>
+        <span>Final loss: <strong>{formatMetric(finalMetric?.loss)}</strong></span>
+        <span>Samples used: <strong>{finalMetric?.total_samples ?? "N/A"}</strong></span>
+      </div>
+      {weightsPreview.length > 0 && (
+        <p style={styles.weightsPreview}>
+          Weight preview: {weightsPreview.join(", ")}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function formatMetric(value) {
+  if (value === null || value === undefined) {
+    return "N/A";
+  }
+  return Number(value).toFixed(4);
+}
+
+function ClientSubmissionPanel({ job, form, submissions, onChange, onSubmit }) {
+  const alreadySubmitted = submissions.some(
+    (item) => item.round_number === job.current_round
+  );
+
+  if (job.status === "draft") {
+    return (
+      <p style={styles.clientNote}>
+        This job is waiting for an ML Engineer or Admin to start orchestration.
+      </p>
+    );
+  }
+
+  if (job.status === "completed") {
+    return <p style={styles.clientNote}>This job is complete. No more updates are needed.</p>;
+  }
+
+  if (alreadySubmitted) {
+    return (
+      <p style={styles.clientNote}>
+        Your update for round {job.current_round} has been submitted. Refresh after aggregation to continue.
+      </p>
+    );
+  }
+
+  return (
+    <div style={styles.submitBox}>
+      <label style={styles.formLabel}>
+        Client label
+        <input
+          style={styles.formInput}
+          value={form.client_label}
+          onChange={(event) => onChange("client_label", event.target.value)}
+        />
+      </label>
+      <div style={styles.twoCols}>
+        <label style={styles.formLabel}>
+          Sample count
+          <input
+            style={styles.formInput}
+            type="number"
+            min="1"
+            value={form.sample_count}
+            onChange={(event) => onChange("sample_count", event.target.value)}
+          />
+        </label>
+        <label style={styles.formLabel}>
+          Accuracy
+          <input
+            style={styles.formInput}
+            type="number"
+            min="0"
+            max="1"
+            step="0.01"
+            value={form.accuracy}
+            onChange={(event) => onChange("accuracy", event.target.value)}
+          />
+        </label>
+      </div>
+      <label style={styles.formLabel}>
+        Loss
+        <input
+          style={styles.formInput}
+          type="number"
+          min="0"
+          step="0.01"
+          value={form.loss}
+          onChange={(event) => onChange("loss", event.target.value)}
+        />
+      </label>
+      <label style={styles.formLabel}>
+        Model weights
+        <textarea
+          style={styles.textarea}
+          value={form.weights}
+          onChange={(event) => onChange("weights", event.target.value)}
+        />
+      </label>
+      <button style={styles.submitUpdateBtn} onClick={onSubmit}>
+        Submit Round {job.current_round} Update
+      </button>
+    </div>
   );
 }
 
@@ -377,6 +654,55 @@ const styles = {
     cursor: "pointer",
     fontSize: "13px",
   },
+  detailBtn: {
+    padding: "9px 14px",
+    borderRadius: "8px",
+    background: "#38bdf8",
+    color: "#082f49",
+    fontWeight: "bold",
+    border: "none",
+    cursor: "pointer",
+    fontSize: "13px",
+  },
+  resultsBox: {
+    background: "#0f172a",
+    border: "1px solid #14532d",
+    borderRadius: "8px",
+    padding: "12px",
+    margin: "12px 0",
+  },
+  resultsHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "10px",
+    color: "#bbf7d0",
+    fontSize: "14px",
+    marginBottom: "10px",
+  },
+  resultsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "8px",
+    color: "#cbd5e1",
+    fontSize: "13px",
+  },
+  reportBtn: {
+    padding: "6px 10px",
+    borderRadius: "6px",
+    border: "1px solid #166534",
+    background: "#14532d",
+    color: "#dcfce7",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "bold",
+  },
+  weightsPreview: {
+    color: "#94a3b8",
+    fontSize: "12px",
+    margin: "10px 0 0",
+    overflowWrap: "anywhere",
+  },
   clientNote: { color: "#cbd5e1", fontSize: "13px", margin: "14px 0 0" },
   infoPanel: {
     background: "#1e293b",
@@ -396,4 +722,47 @@ const styles = {
   tdActions: { borderBottom: "1px solid #334155", padding: "8px", display: "flex", gap: "8px", flexWrap: "wrap" },
   smallBtn: { padding: "6px 10px", borderRadius: "6px", border: "none", background: "#38bdf8", color: "#082f49", cursor: "pointer" },
   smallDangerBtn: { padding: "6px 10px", borderRadius: "6px", border: "none", background: "#991b1b", color: "#fee2e2", cursor: "pointer" },
+  submitBox: {
+    display: "grid",
+    gap: "10px",
+    marginTop: "14px",
+    paddingTop: "14px",
+    borderTop: "1px solid #334155",
+  },
+  twoCols: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" },
+  formLabel: {
+    display: "grid",
+    gap: "5px",
+    color: "#94a3b8",
+    fontSize: "12px",
+    fontWeight: "bold",
+  },
+  formInput: {
+    padding: "8px 10px",
+    borderRadius: "6px",
+    border: "1px solid #334155",
+    background: "#0f172a",
+    color: "#e2e8f0",
+    fontSize: "13px",
+  },
+  textarea: {
+    minHeight: "68px",
+    padding: "8px 10px",
+    borderRadius: "6px",
+    border: "1px solid #334155",
+    background: "#0f172a",
+    color: "#e2e8f0",
+    fontSize: "13px",
+    resize: "vertical",
+  },
+  submitUpdateBtn: {
+    padding: "9px 14px",
+    borderRadius: "8px",
+    background: "#38bdf8",
+    color: "#082f49",
+    fontWeight: "bold",
+    border: "none",
+    cursor: "pointer",
+    fontSize: "13px",
+  },
 };

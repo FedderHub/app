@@ -3,7 +3,7 @@
 This repository combines the Phase 2 work from the three teams into one project:
 
 - `backend/` - Team Alpha FastAPI API, PostgreSQL/RDS schema, JWT auth, job APIs, and metrics APIs.
-- `frontend/` - Team Alpha React dashboard with job creation, job start, and round metric visibility.
+- `frontend/` - Team Alpha React dashboard with role-aware job creation, start, client update submission, FedAvg results, and admin controls.
 - `client/` - Team Beta Electron edge-node app, Docker sandbox, local PyTorch training, and gRPC weight streaming.
 - `federated-engine/` - Team Gamma gRPC aggregator, FedAvg implementation, Celery worker, and RDS metrics connector.
 
@@ -41,9 +41,11 @@ source .env
 set +a
 psql "$DATABASE_URL" -f migrations/phase2_rds_upgrade.sql
 psql "$DATABASE_URL" -f migrations/phase3_integration.sql
+psql "$DATABASE_URL" -f migrations/phase4_website_workflow.sql
+psql "$DATABASE_URL" -f migrations/phase5_publish_results.sql
 ```
 
-The FastAPI app and Gamma engine also call SQLAlchemy `create_all`/table creation as a fallback, but the SQL files are the clean migration path for RDS.
+The FastAPI app also calls SQLAlchemy `create_all` as a fallback, but the SQL files are the clean migration path for RDS.
 
 ## Run Locally
 
@@ -65,25 +67,7 @@ npm install
 npm start
 ```
 
-Gamma gRPC aggregator for a specific job:
-
-```bash
-cd federated-engine
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python grpc_server.py --job-id <job_id> --expected-clients 3 --port 50051
-```
-
-Gamma Celery worker:
-
-```bash
-cd federated-engine
-source .venv/bin/activate
-celery -A celery_app worker --loglevel=info
-```
-
-Beta client:
+Optional Beta/Gamma local training bridge:
 
 ```bash
 cd client
@@ -95,9 +79,11 @@ npm start
 
 1. Create/login as an ML Engineer in the web app.
 2. Create a training job in the dashboard.
-3. Click `Start Orchestration`; the API marks the job scheduled and queues Gamma's Celery task if Redis is available.
-4. Start Gamma's gRPC aggregator with that job ID.
-5. In the Electron client, authenticate against the Alpha API, select a `.pt` checkpoint and local CSV folder, then start training.
-6. The client trains inside Docker with the dataset mounted read-only and streams only model weights to Gamma.
-7. Gamma runs FedAvg when the expected clients have submitted updates and writes round metrics into RDS.
-8. The React dashboard reads `/jobs/{job_id}/metrics` to show completed round progress.
+3. Click `Start Orchestration`; the API marks the job running.
+4. Log in as a Client Operator.
+5. Open a running job card and submit a local update payload: client label, sample count, optional accuracy/loss, and model weights.
+6. When the configured number of clients submit for the active round, the backend runs FedAvg and writes a `round_metrics` row in RDS.
+7. The job advances to the next round or becomes completed after the configured final round.
+8. Admin and ML Engineer dashboards show creator, active round, pending updates, client count, total samples, and aggregate metrics.
+
+This browser workflow is the professor-demo path. The Electron client and Gamma gRPC engine remain available for deeper local-training demos, but users do not need terminal job IDs for the website product flow.

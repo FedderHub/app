@@ -27,8 +27,27 @@ class JobConfiguration(Base):
     job_name = Column(String, nullable=False)
     round_count = Column(Integer, nullable=False, default=5)
     local_epochs = Column(Integer, nullable=False, default=3)
+    expected_clients = Column(Integer, nullable=False, default=1)
+    current_round = Column(Integer, nullable=False, default=0)
     status = Column(String, nullable=False, default="draft")
+    results_published = Column(Integer, nullable=False, default=0)
+    published_at = Column(DateTime, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ClientSubmission(Base):
+    __tablename__ = "client_submissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("job_configurations.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    client_label = Column(String, nullable=False)
+    round_number = Column(Integer, nullable=False)
+    sample_count = Column(Integer, nullable=False)
+    accuracy = Column(Float, nullable=True)
+    loss = Column(Float, nullable=True)
+    weights_json = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="accepted")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class RoundMetric(Base):
