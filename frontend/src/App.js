@@ -3,6 +3,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import Dashboard from "./pages/Dashboard";
 import CreateJobPage from "./pages/CreateJobPage";
+import JobDetailsPage from "./pages/JobDetailsPage";
 import PrivateRoute from "./components/PrivateRoute";
 
 function App() {
@@ -27,6 +28,14 @@ function App() {
           element={
             <PrivateRoute>
               <CreateJobPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/jobs/:jobId"
+          element={
+            <PrivateRoute>
+              <JobDetailsPage />
             </PrivateRoute>
           }
         />

@@ -18,8 +18,8 @@ export default function LoginPage() {
 
     try {
       const res = await client.post("/auth/login", form);
-      localStorage.setItem("token", res.data.access_token);
-      localStorage.setItem(
+      sessionStorage.setItem("token", res.data.access_token);
+      sessionStorage.setItem(
         "user",
         JSON.stringify({
           role: res.data.role,
@@ -28,6 +28,8 @@ export default function LoginPage() {
           status: res.data.status,
         })
       );
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
       navigate("/dashboard");
     } catch (err) {
       setError(err.response?.data?.detail || "Incorrect email or password.");

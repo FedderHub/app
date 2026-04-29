@@ -1,10 +1,24 @@
+from datetime import datetime
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
 from app import models
-from app.config import REDIS_URL
-from app.schemas import JobCreate, JobOut, JobStartResponse, RoundMetricOut
+from app.schemas import (
+    ClientSubmissionCreate,
+    ClientSubmissionDetail,
+    ClientSubmissionOut,
+    JobDetailsOut,
+    JobCreate,
+    JobOut,
+    JobStartResponse,
+    PublishResponse,
+    RoundMetricDetail,
+    RoundMetricOut,
+    SubmissionResponse,
+)
 from app.auth import get_db, get_current_user, require_role
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -16,10 +30,207 @@ def job_to_out(job: models.JobConfiguration, creator_email: str | None = None) -
         job_name=job.job_name,
         round_count=job.round_count,
         local_epochs=job.local_epochs,
+        expected_clients=job.expected_clients,
+        current_round=job.current_round,
         status=job.status,
+        results_published=bool(job.results_published),
+        published_at=job.published_at,
         created_by=job.created_by,
         creator_email=creator_email,
         created_at=job.created_at,
+    )
+
+
+def weighted_average(values: list[float | None], sample_counts: list[int]) -> float | None:
+    pairs = [(value, count) for value, count in zip(values, sample_counts) if value is not None]
+    if not pairs:
+        return None
+    total = sum(count for _, count in pairs)
+    if total <= 0:
+        return None
+    return sum(value * count for value, count in pairs) / total
+
+
+def aggregate_round_if_ready(db: Session, job: models.JobConfiguration) -> tuple[bool, str]:
+    round_number = job.current_round or 1
+    submissions = (
+        db.query(models.ClientSubmission)
+        .filter(
+            models.ClientSubmission.job_id == job.id,
+            models.ClientSubmission.round_number == round_number,
+            models.ClientSubmission.status == "accepted",
+        )
+        .order_by(models.ClientSubmission.created_at.asc())
+        .all()
+    )
+
+    if len(submissions) < job.expected_clients:
+        remaining = job.expected_clients - len(submissions)
+        return False, f"Update accepted for round {round_number}. Waiting for {remaining} more client update(s)."
+
+    parsed_weights = []
+    sample_counts = []
+    for submission in submissions:
+        try:
+            weights = json.loads(submission.weights_json)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Submission {submission.id} has invalid weights.",
+            ) from exc
+
+        if not isinstance(weights, list) or not weights:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Submission {submission.id} has empty weights.",
+            )
+
+        parsed_weights.append([float(value) for value in weights])
+        sample_counts.append(submission.sample_count)
+
+    lengths = {len(weights) for weights in parsed_weights}
+    if len(lengths) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="All client updates for a round must use the same weight vector length.",
+        )
+
+    total_samples = sum(sample_counts)
+    if total_samples <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Total sample count must be greater than zero.",
+        )
+
+    global_weights = [0.0] * len(parsed_weights[0])
+    for weights, count in zip(parsed_weights, sample_counts):
+        contribution = count / total_samples
+        for index, value in enumerate(weights):
+            global_weights[index] += contribution * value
+
+    snapshot = {
+        "algorithm": "FedAvg",
+        "round_number": round_number,
+        "weight_count": len(global_weights),
+        "global_weights": [round(value, 8) for value in global_weights],
+        "weights_preview": [round(value, 6) for value in global_weights[:8]],
+        "client_labels": [submission.client_label for submission in submissions],
+    }
+
+    metric = models.RoundMetric(
+        job_id=job.id,
+        round_number=round_number,
+        accuracy=weighted_average([s.accuracy for s in submissions], sample_counts),
+        loss=weighted_average([s.loss for s in submissions], sample_counts),
+        num_clients=len(submissions),
+        total_samples=total_samples,
+        global_weights_snapshot=json.dumps(snapshot),
+    )
+    db.add(metric)
+
+    for submission in submissions:
+        submission.status = "aggregated"
+
+    if round_number >= job.round_count:
+        job.status = "completed"
+    else:
+        job.current_round = round_number + 1
+        job.status = "running"
+
+    db.commit()
+    db.refresh(job)
+    return True, f"Round {round_number} aggregated with FedAvg using {len(submissions)} client update(s)."
+
+
+def parse_weights(weights_json: str | None) -> list[float]:
+    if not weights_json:
+        return []
+    try:
+        values = json.loads(weights_json)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(values, list):
+        return []
+    return [float(value) for value in values]
+
+
+def parse_snapshot(snapshot_json: str | None) -> dict:
+    if not snapshot_json:
+        return {}
+    try:
+        snapshot = json.loads(snapshot_json)
+    except json.JSONDecodeError:
+        return {}
+    return snapshot if isinstance(snapshot, dict) else {}
+
+
+def metric_to_detail(metric: models.RoundMetric) -> RoundMetricDetail:
+    snapshot = parse_snapshot(metric.global_weights_snapshot)
+    global_weights = snapshot.get("global_weights") or snapshot.get("weights_preview") or []
+    return RoundMetricDetail(
+        id=metric.id,
+        job_id=metric.job_id,
+        round_number=metric.round_number,
+        accuracy=metric.accuracy,
+        loss=metric.loss,
+        num_clients=metric.num_clients,
+        total_samples=metric.total_samples,
+        global_weights=[float(value) for value in global_weights],
+        global_weights_snapshot=snapshot or None,
+        completed_at=metric.completed_at,
+    )
+
+
+def build_job_details(
+    db: Session,
+    job: models.JobConfiguration,
+    creator_email: str | None,
+    visible_to_clients: bool,
+) -> JobDetailsOut:
+    submission_rows = (
+        db.query(models.ClientSubmission, models.User.email)
+        .outerjoin(models.User, models.ClientSubmission.user_id == models.User.id)
+        .filter(models.ClientSubmission.job_id == job.id)
+        .order_by(
+            models.ClientSubmission.round_number.asc(),
+            models.ClientSubmission.created_at.asc(),
+        )
+        .all()
+    )
+    submissions = [
+        ClientSubmissionDetail(
+            id=submission.id,
+            job_id=submission.job_id,
+            user_id=submission.user_id,
+            client_email=email,
+            client_label=submission.client_label,
+            round_number=submission.round_number,
+            sample_count=submission.sample_count,
+            accuracy=submission.accuracy,
+            loss=submission.loss,
+            weights=parse_weights(submission.weights_json),
+            status=submission.status,
+            created_at=submission.created_at,
+        )
+        for submission, email in submission_rows
+    ]
+
+    metric_rows = (
+        db.query(models.RoundMetric)
+        .filter(models.RoundMetric.job_id == job.id)
+        .order_by(models.RoundMetric.round_number.asc())
+        .all()
+    )
+    metrics = [metric_to_detail(metric) for metric in metric_rows]
+    final_metric = metrics[-1] if metrics else None
+
+    return JobDetailsOut(
+        job=job_to_out(job, creator_email),
+        submissions=submissions,
+        metrics=metrics,
+        final_metric=final_metric,
+        final_weights=final_metric.global_weights if final_metric else [],
+        visible_to_clients=visible_to_clients,
     )
 
 
@@ -36,6 +247,8 @@ def create_job(
         job_name=payload.job_name,
         round_count=payload.round_count,
         local_epochs=payload.local_epochs,
+        expected_clients=payload.expected_clients,
+        current_round=0,
         status="draft",
         created_by=current_user.id,
     )
@@ -79,6 +292,44 @@ def get_job(
     return job_to_out(job, creator_email)
 
 
+@router.get("/{job_id}/details", response_model=JobDetailsOut)
+def get_job_details(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Detailed per-job view with client submissions, round metrics, and final results."""
+    job = db.query(models.JobConfiguration).filter(
+        models.JobConfiguration.id == job_id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    is_manager = current_user.role in {"platform_admin", "ml_engineer"}
+    visible_to_clients = bool(job.results_published)
+    if current_user.role == "client_operator" and not visible_to_clients:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Final results have not been published to Client Operators yet.",
+        )
+
+    creator_email = None
+    if job.created_by:
+        creator = db.query(models.User).filter(models.User.id == job.created_by).first()
+        creator_email = creator.email if creator else None
+
+    details = build_job_details(db, job, creator_email, visible_to_clients)
+
+    if not is_manager:
+        details.submissions = [
+            submission
+            for submission in details.submissions
+            if submission.user_id == current_user.id
+        ]
+
+    return details
+
+
 @router.post("/{job_id}/start", response_model=JobStartResponse)
 def start_job(
     job_id: int,
@@ -94,28 +345,18 @@ def start_job(
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
-    job.status = "scheduled"
+    job.status = "running"
+    if job.current_round < 1:
+        job.current_round = 1
     db.commit()
     db.refresh(job)
 
-    try:
-        from celery import Celery
-
-        celery_app = Celery("federhub_alpha", broker=REDIS_URL, backend=REDIS_URL)
-        task = celery_app.send_task("federhub.run_federation_job", args=[job_id])
-        return JobStartResponse(
-            job_id=job.id,
-            status=job.status,
-            task_id=task.id,
-            message="Job scheduled. Start Gamma's Celery worker and gRPC aggregator to process rounds.",
-        )
-    except Exception as exc:
-        return JobStartResponse(
-            job_id=job.id,
-            status=job.status,
-            task_id=None,
-            message=f"Job marked scheduled, but the Celery task could not be queued: {exc}",
-        )
+    return JobStartResponse(
+        job_id=job.id,
+        status=job.status,
+        task_id=None,
+        message="Job is running. Client Operators can now submit local update payloads from the website.",
+    )
 
 
 @router.get("/{job_id}/metrics", response_model=List[RoundMetricOut])
@@ -134,6 +375,159 @@ def get_job_metrics(
     return db.query(models.RoundMetric).filter(
         models.RoundMetric.job_id == job_id
     ).order_by(models.RoundMetric.round_number.asc()).all()
+
+
+@router.post("/{job_id}/publish", response_model=PublishResponse)
+def publish_job_results(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(
+        require_role("platform_admin", "ml_engineer")
+    ),
+):
+    """Publish final results so Client Operators can view the details page."""
+    job = db.query(models.JobConfiguration).filter(
+        models.JobConfiguration.id == job_id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    if job.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only completed jobs can be published.",
+        )
+
+    metrics_count = db.query(models.RoundMetric).filter(
+        models.RoundMetric.job_id == job_id
+    ).count()
+    if metrics_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No aggregated round metrics are available to publish.",
+        )
+
+    job.results_published = 1
+    job.published_at = datetime.utcnow()
+    db.commit()
+    db.refresh(job)
+
+    creator_email = None
+    if job.created_by:
+        creator = db.query(models.User).filter(models.User.id == job.created_by).first()
+        creator_email = creator.email if creator else None
+
+    return PublishResponse(
+        job=job_to_out(job, creator_email),
+        message="Final results published to Client Operators.",
+    )
+
+
+@router.get("/{job_id}/submissions", response_model=List[ClientSubmissionOut])
+def get_job_submissions(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """List client submissions for a job."""
+    job = db.query(models.JobConfiguration).filter(
+        models.JobConfiguration.id == job_id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    query = db.query(models.ClientSubmission).filter(models.ClientSubmission.job_id == job_id)
+    if current_user.role == "client_operator":
+        query = query.filter(models.ClientSubmission.user_id == current_user.id)
+
+    return query.order_by(
+        models.ClientSubmission.round_number.asc(),
+        models.ClientSubmission.created_at.desc(),
+    ).all()
+
+
+@router.post("/{job_id}/submissions", response_model=SubmissionResponse, status_code=status.HTTP_201_CREATED)
+def submit_client_update(
+    job_id: int,
+    payload: ClientSubmissionCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("client_operator")),
+):
+    """Client Operator: submit a local model update for the active round."""
+    job = db.query(models.JobConfiguration).filter(
+        models.JobConfiguration.id == job_id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    if job.status not in {"running", "scheduled"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This job is not accepting client updates. Ask an ML Engineer to start it.",
+        )
+
+    if payload.sample_count <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sample count must be greater than zero.",
+        )
+
+    if not payload.weights:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one model weight is required.",
+        )
+
+    round_number = job.current_round or 1
+    existing = (
+        db.query(models.ClientSubmission)
+        .filter(
+            models.ClientSubmission.job_id == job.id,
+            models.ClientSubmission.user_id == current_user.id,
+            models.ClientSubmission.round_number == round_number,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"You already submitted an update for round {round_number}.",
+        )
+
+    submission = models.ClientSubmission(
+        job_id=job.id,
+        user_id=current_user.id,
+        client_label=payload.client_label or current_user.email,
+        round_number=round_number,
+        sample_count=payload.sample_count,
+        accuracy=payload.accuracy,
+        loss=payload.loss,
+        weights_json=json.dumps([float(value) for value in payload.weights]),
+        status="accepted",
+    )
+    db.add(submission)
+
+    if job.status == "scheduled":
+        job.status = "running"
+
+    db.commit()
+    db.refresh(submission)
+    db.refresh(job)
+
+    aggregation_ran, message = aggregate_round_if_ready(db, job)
+
+    creator_email = None
+    if job.created_by:
+        creator = db.query(models.User).filter(models.User.id == job.created_by).first()
+        creator_email = creator.email if creator else None
+
+    db.refresh(submission)
+    return SubmissionResponse(
+        job=job_to_out(job, creator_email),
+        submission=submission,
+        aggregation_ran=aggregation_ran,
+        message=message,
+    )
 
 
 @router.patch("/{job_id}/status", response_model=JobOut)
@@ -183,6 +577,7 @@ def delete_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     db.query(models.RoundMetric).filter(models.RoundMetric.job_id == job_id).delete()
+    db.query(models.ClientSubmission).filter(models.ClientSubmission.job_id == job_id).delete()
     db.delete(job)
     db.commit()
     return None
