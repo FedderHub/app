@@ -156,6 +156,10 @@ export default function Dashboard() {
       setActionMessage("Enter at least one numeric model weight.");
       return;
     }
+    if (weights.length !== Number(job.weight_count)) {
+      setActionMessage(`This job requires exactly ${job.weight_count} weights. You entered ${weights.length}.`);
+      return;
+    }
 
     setActionMessage("");
     try {
@@ -264,6 +268,7 @@ export default function Dashboard() {
                   <span>Created by: <strong>{job.creator_email || "Unknown"}</strong></span>
                   <span>Active round: <strong>{job.status === "completed" ? "Complete" : activeRound || "Not started"}</strong></span>
                   <span>Expected clients: <strong>{job.expected_clients}</strong></span>
+                  <span>Required weights: <strong>{job.weight_count}</strong></span>
                   <span>Pending updates: <strong>{isCompleted ? "Complete" : `${activeRoundSubmissions.length}/${job.expected_clients}`}</strong></span>
                   <span>Rounds: <strong>{job.round_count}</strong></span>
                   <span>Local epochs: <strong>{job.local_epochs}</strong></span>
@@ -271,6 +276,10 @@ export default function Dashboard() {
                   <span>Participating clients: <strong>{latestMetric?.num_clients ?? "N/A"}</strong></span>
                   <span>Total samples: <strong>{latestMetric?.total_samples ?? "N/A"}</strong></span>
                 </div>
+
+                {job.description && (
+                  <p style={styles.descriptionText}>{job.description}</p>
+                )}
 
                 {isCompleted && (
                   <CompletedResults
@@ -338,19 +347,16 @@ export default function Dashboard() {
 
 function buildDefaultSubmissionForm(email, job) {
   const seed = Number(job?.id || 1) + Number(job?.current_round || 1);
+  const count = Math.max(Number(job?.weight_count || 2), 1);
+  const weights = Array.from({ length: count }, (_item, index) =>
+    (0.1 * (index + 1) + seed * 0.01).toFixed(3)
+  );
   return {
     client_label: email || "Client Node",
     sample_count: 100,
     accuracy: 0.86,
     loss: 0.24,
-    weights: [
-      0.1 + seed * 0.01,
-      0.2 + seed * 0.01,
-      0.3 + seed * 0.01,
-      0.4 + seed * 0.01,
-    ]
-      .map((value) => value.toFixed(3))
-      .join(", "),
+    weights: weights.join(", "),
   };
 }
 
@@ -525,7 +531,7 @@ function ClientSubmissionPanel({ job, form, submissions, onChange, onSubmit }) {
         />
       </label>
       <label style={styles.formLabel}>
-        Model weights
+        Model weights ({job.weight_count} required)
         <textarea
           style={styles.textarea}
           value={form.weights}
@@ -632,6 +638,17 @@ const styles = {
     whiteSpace: "nowrap",
   },
   metaStack: { display: "grid", gap: "7px", color: "#94a3b8", fontSize: "14px", marginBottom: "12px" },
+  descriptionText: {
+    color: "#cbd5e1",
+    fontSize: "13px",
+    lineHeight: 1.45,
+    background: "#0f172a",
+    border: "1px solid #334155",
+    borderRadius: "8px",
+    padding: "10px",
+    margin: "10px 0",
+    whiteSpace: "pre-wrap",
+  },
   cardDate: { color: "#64748b", fontSize: "12px", margin: 0 },
   cardActions: { display: "flex", gap: "10px", marginTop: "14px", flexWrap: "wrap" },
   startBtn: {

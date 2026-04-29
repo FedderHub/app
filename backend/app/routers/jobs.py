@@ -28,9 +28,11 @@ def job_to_out(job: models.JobConfiguration, creator_email: str | None = None) -
     return JobOut(
         id=job.id,
         job_name=job.job_name,
+        description=job.description,
         round_count=job.round_count,
         local_epochs=job.local_epochs,
         expected_clients=job.expected_clients,
+        weight_count=job.weight_count,
         current_round=job.current_round,
         status=job.status,
         results_published=bool(job.results_published),
@@ -245,9 +247,11 @@ def create_job(
     """Create a new federated training job. Requires ml_engineer or platform_admin role."""
     job = models.JobConfiguration(
         job_name=payload.job_name,
+        description=payload.description,
         round_count=payload.round_count,
         local_epochs=payload.local_epochs,
         expected_clients=payload.expected_clients,
+        weight_count=payload.weight_count,
         current_round=0,
         status="draft",
         created_by=current_user.id,
@@ -476,6 +480,12 @@ def submit_client_update(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one model weight is required.",
+        )
+
+    if len(payload.weights) != job.weight_count:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This job requires exactly {job.weight_count} weights. You submitted {len(payload.weights)}.",
         )
 
     round_number = job.current_round or 1

@@ -43,6 +43,7 @@ psql "$DATABASE_URL" -f migrations/phase2_rds_upgrade.sql
 psql "$DATABASE_URL" -f migrations/phase3_integration.sql
 psql "$DATABASE_URL" -f migrations/phase4_website_workflow.sql
 psql "$DATABASE_URL" -f migrations/phase5_publish_results.sql
+psql "$DATABASE_URL" -f migrations/phase6_job_description_weight_count.sql
 ```
 
 The FastAPI app also calls SQLAlchemy `create_all` as a fallback, but the SQL files are the clean migration path for RDS.
