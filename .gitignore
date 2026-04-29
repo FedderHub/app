@@ -1,0 +1,16 @@
+.DS_Store
+.vscode/
+node_modules/
+build/
+dist/
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+backend/federhub/
+backend/federhub.db
+client/ml/output/
+coverage/
