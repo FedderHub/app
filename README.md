@@ -50,23 +50,21 @@ The FastAPI app also calls SQLAlchemy `create_all` as a fallback, but the SQL fi
 
 ## Run Locally
 
-Backend:
+Run the backend and frontend in **two separate Terminal windows**.
+
+Terminal 1 - Backend:
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+cd "/Users/naman/1)Projects/NYU projects/Federhub-all branches/merged/backend" && source .venv/bin/activate && uvicorn app.main:app --reload
 ```
 
-Frontend:
+Terminal 2 - Frontend:
 
 ```bash
-cd frontend
-npm install
-npm start
+cd "/Users/naman/1)Projects/NYU projects/Federhub-all branches/merged/frontend" && npm start
 ```
+
+Then open `http://localhost:3000`.
 
 Optional Beta/Gamma local training bridge:
 
