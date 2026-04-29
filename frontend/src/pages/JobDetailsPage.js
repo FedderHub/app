@@ -84,6 +84,16 @@ export default function JobDetailsPage() {
               <span style={styles.status}>{details.job.status}</span>
             </section>
 
+            {details.job.description && (
+              <section style={styles.panel}>
+                <h2 style={styles.panelTitle}>Job Description and Feature Notes</h2>
+                <p style={styles.descriptionText}>{details.job.description}</p>
+                <p style={styles.muted}>
+                  Required client weight vector length: <strong>{details.job.weight_count}</strong>
+                </p>
+              </section>
+            )}
+
             <section style={styles.actions}>
               <button style={styles.downloadBtn} onClick={downloadReport}>
                 Download Full Details
@@ -222,6 +232,7 @@ const styles = {
   summaryValue: { display: "block", color: "#f8fafc", fontSize: "20px" },
   panel: { background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "18px", marginBottom: "18px" },
   panelTitle: { color: "#f8fafc", margin: "0 0 10px", fontSize: "20px" },
+  descriptionText: { color: "#cbd5e1", whiteSpace: "pre-wrap", lineHeight: 1.5 },
   smallHeading: { color: "#e2e8f0", margin: "16px 0 8px", fontSize: "15px" },
   formulaBox: { background: "#0f172a", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "8px", padding: "12px", fontFamily: "monospace", overflowX: "auto" },
   weightsBox: { background: "#0f172a", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "8px", padding: "12px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" },

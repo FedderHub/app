@@ -8,9 +8,11 @@ export default function CreateJobPage() {
   const user = JSON.parse(sessionStorage.getItem("user") || "{}");
   const [form, setForm] = useState({
     job_name: "",
+    description: "",
     round_count: 5,
     local_epochs: 3,
     expected_clients: 1,
+    weight_count: 2,
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -35,12 +37,20 @@ export default function CreateJobPage() {
       setError("Job name is required.");
       return;
     }
+    if (!form.description.trim()) {
+      setError("Job description is required.");
+      return;
+    }
     if (form.round_count < 1 || form.local_epochs < 1) {
       setError("Round count and local epochs must be at least 1.");
       return;
     }
     if (form.expected_clients < 1) {
       setError("Expected clients must be at least 1.");
+      return;
+    }
+    if (form.weight_count < 1) {
+      setError("Weight count must be at least 1.");
       return;
     }
 
@@ -80,6 +90,21 @@ export default function CreateJobPage() {
                 required
               />
               <p style={styles.hint}>A unique name to identify this training run.</p>
+            </div>
+
+            <div style={styles.field}>
+              <label style={styles.label}>Description and Feature Notes</label>
+              <textarea
+                style={styles.textarea}
+                name="description"
+                value={form.description}
+                onChange={handleChange}
+                placeholder="Describe the task, feature order, expected labels, and any dataset requirements clients need to know."
+                required
+              />
+              <p style={styles.hint}>
+                Include the feature order clients should use when creating their local update vector.
+              </p>
             </div>
 
             {/* Round Count */}
@@ -135,13 +160,30 @@ export default function CreateJobPage() {
               </p>
             </div>
 
+            <div style={styles.field}>
+              <label style={styles.label}>Required Weight Count</label>
+              <input
+                style={styles.input}
+                type="number"
+                name="weight_count"
+                value={form.weight_count}
+                onChange={handleChange}
+                min={1}
+                max={1000}
+              />
+              <p style={styles.hint}>
+                Every client must submit exactly this many weights each round.
+              </p>
+            </div>
+
             {/* Summary preview */}
             <div style={styles.summary}>
               <span style={styles.summaryLabel}>Summary:</span>
               <span style={styles.summaryText}>
                 <strong style={styles.highlight}>{form.round_count}</strong> rounds ×{" "}
                 <strong style={styles.highlight}>{form.local_epochs}</strong> local epochs ×{" "}
-                <strong style={styles.highlight}>{form.expected_clients}</strong> clients
+                <strong style={styles.highlight}>{form.expected_clients}</strong> clients ×{" "}
+                <strong style={styles.highlight}>{form.weight_count}</strong> weights
               </span>
             </div>
 
@@ -187,6 +229,16 @@ const styles = {
     background: "#0f172a",
     color: "#f1f5f9",
     fontSize: "15px",
+  },
+  textarea: {
+    minHeight: "110px",
+    padding: "10px 14px",
+    borderRadius: "8px",
+    border: "1px solid #334155",
+    background: "#0f172a",
+    color: "#f1f5f9",
+    fontSize: "15px",
+    resize: "vertical",
   },
   hint: { color: "#475569", fontSize: "12px", margin: "4px 0 0 0" },
   summary: {

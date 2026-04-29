@@ -37,16 +37,20 @@ class UserOut(BaseModel):
 
 class JobCreate(BaseModel):
     job_name: str
+    description: Optional[str] = None
     round_count: int = 5
     local_epochs: int = 3
     expected_clients: int = 1
+    weight_count: int = 1
 
 class JobOut(BaseModel):
     id: int
     job_name: str
+    description: Optional[str] = None
     round_count: int
     local_epochs: int
     expected_clients: int
+    weight_count: int
     current_round: int
     status: str
     results_published: bool = False

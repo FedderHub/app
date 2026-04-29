@@ -25,9 +25,11 @@ class JobConfiguration(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     job_name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
     round_count = Column(Integer, nullable=False, default=5)
     local_epochs = Column(Integer, nullable=False, default=3)
     expected_clients = Column(Integer, nullable=False, default=1)
+    weight_count = Column(Integer, nullable=False, default=1)
     current_round = Column(Integer, nullable=False, default=0)
     status = Column(String, nullable=False, default="draft")
     results_published = Column(Integer, nullable=False, default=0)
