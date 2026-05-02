@@ -14,3 +14,10 @@ backend/federhub/
 backend/federhub.db
 client/ml/output/
 coverage/
+
+# Test artifacts (added in Sprint 7 testing branch)
+.coverage
+htmlcov/
+__pycache__/
+*.pyc
+.pytest_cache/
