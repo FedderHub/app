@@ -107,6 +107,7 @@ def send_weights(
     summary_path: str,
     server_address: str,
     client_id: str,
+    job_id : int = 0
 ) -> bool:
     """
     Load a .pt file and send the weights to Gamma's gRPC server.
@@ -140,6 +141,7 @@ def send_weights(
         sample_count=sample_count,
         layers=layers,
         model_architecture=architecture,
+        job_id=job_id,
     )
 
     # 4. Send to Gamma's server

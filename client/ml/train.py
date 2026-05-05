@@ -171,6 +171,7 @@ def flush_sensitive_tensors(*tensors):
 def main():
     parser = argparse.ArgumentParser(description="FederHub Team Beta Phase 2/3 trainer")
     parser.add_argument("--data", help="Path to a CSV dataset")
+    parser.add_argument('--job-id', type=int, default=0, help='Target Job ID for Gamma aggregation')
     parser.add_argument(
         "--input-dir",
         help="Directory containing the client dataset CSV mounted into the Docker sandbox",
@@ -278,6 +279,7 @@ def main():
                 summary_path=str(metadata_path),
                 server_address=args.server,
                 client_id=client_id,
+                job_id=args.job_id,
             )
             if success:
                 print("[PHASE 3] Weight streaming complete. Only mathematical updates were transmitted.", flush=True)

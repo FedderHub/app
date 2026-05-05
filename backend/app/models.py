@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Float, Integer, String, DateTime, ForeignKey, Text
-from datetime import datetime
+from datetime import datetime , timezone
 from app.db import Base
 
 class Organization(Base):
@@ -7,7 +7,8 @@ class Organization(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class User(Base):
     __tablename__ = "users"
@@ -18,7 +19,8 @@ class User(Base):
     role = Column(String, nullable=False, default="ml_engineer")
     status = Column(String, nullable=False, default="active")
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class JobConfiguration(Base):
     __tablename__ = "job_configurations"
@@ -35,7 +37,8 @@ class JobConfiguration(Base):
     results_published = Column(Integer, nullable=False, default=0)
     published_at = Column(DateTime, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class ClientSubmission(Base):
     __tablename__ = "client_submissions"
@@ -50,7 +53,8 @@ class ClientSubmission(Base):
     loss = Column(Float, nullable=True)
     weights_json = Column(Text, nullable=False)
     status = Column(String, nullable=False, default="accepted")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class RoundMetric(Base):
     __tablename__ = "round_metrics"

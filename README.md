@@ -1,88 +1,149 @@
-# FederHub Merged Integration
+# FederHub: Federated Learning Platform
 
-This repository combines the Phase 2 work from the three teams into one project:
+FederHub is a decentralized, privacy-preserving Machine Learning architecture. It bridges a React/FastAPI web dashboard with a secure, Electron-based Edge Node desktop application running local PyTorch models inside Docker, all orchestrated by a Python gRPC/Celery backend.
 
-- `backend/` - Team Alpha FastAPI API, PostgreSQL/RDS schema, JWT auth, job APIs, and metrics APIs.
-- `frontend/` - Team Alpha React dashboard with role-aware job creation, start, client update submission, FedAvg results, and admin controls.
-- `client/` - Team Beta Electron edge-node app, Docker sandbox, local PyTorch training, and gRPC weight streaming.
-- `federated-engine/` - Team Gamma gRPC aggregator, FedAvg implementation, Celery worker, and RDS metrics connector.
+---
 
-## Environment
+##  What Changes We Made & Why
 
-The canonical database is Alpha's AWS RDS PostgreSQL instance. Keep credentials in env files only.
+1. **Live Analytics Dashboard (React)**
+   * **What:** Upgraded the Job Details page to include synchronized multi-line Recharts graphs tracking Global Accuracy, Loss, and exact parameter weight changes across FedAvg rounds. Added custom tooltips showing contributing Client IDs.
+   * **Why:** To provide ML Engineers and Client Operators with real-time, transparent insights into model convergence.
+2. **Native App Distribution**
+   * **What:** Added a FastAPI download endpoint and web dashboard buttons to serve compiled `.dmg` (Mac) and `.exe` (Windows) installer files.
+   * **Why:** To simulate a true commercial SaaS workflow where hospitals can securely download the Edge Node software directly from the portal.
+3. **Zero-Trust Docker Architecture (Electron)**
+   * **What:** Re-architected the desktop client to rely entirely on a pre-built Docker image rather than building images dynamically on the user's machine. 
+   * **Why:** To make the desktop application infinitely more reliable, faster, and immune to local OS environment bugs.
+4. **Multi-Tenant gRPC Orchestration Engine**
+   * **What:** Upgraded the Gamma server to utilize a dynamic "Job State Dictionary" rather than flat global variables. 
+   * **Why:** To allow the server to process dozens of different machine learning models (e.g., Tumor Detection and Bone Fracture Analysis) simultaneously without cross-contaminating the mathematical weights.
+5. **End-to-End Job Routing**
+   * **What:** Wired a `Target Job ID` field from the React UI -> Electron Payload -> Docker Arguments -> `train.py` -> `grpc_weight_sender.py` -> Protobuf schema -> gRPC Server.
+   * **Why:** To guarantee every packet of weights is mathematically isolated and properly attributed to its specific job in the PostgreSQL database.
+6. **Zero-Knowledge Privacy Controls (FastAPI)**
+   * **What:** Updated the API router to verify the `current_user.id` against the `ClientSubmissions` table before serving job details. 
+   * **Why:** To ensure new users or "free-riders" cannot view the proprietary Global Model weights or analytics until they have actively contributed their own local data to the training round.
 
-`backend/.env` should contain:
+---
 
-```bash
-DATABASE_URL=postgresql://postgres:<real-password>@federhub-db.cq326a2yexwu.us-east-1.rds.amazonaws.com:5432/federhub
-SECRET_KEY=<local-development-secret>
-REDIS_URL=redis://localhost:6379/0
-```
+## Issues Faced & How We Resolved Them
 
-`federated-engine/.env` can use the same `DATABASE_URL` and `REDIS_URL` values:
+Building a desktop app that orchestrates Docker and Python introduced severe macOS security constraints, and scaling to a multi-tenant environment required complex state management. Here is the breakdown of the roadblocks and our engineering solutions:
 
-```bash
-DATABASE_URL=postgresql://postgres:<real-password>@federhub-db.cq326a2yexwu.us-east-1.rds.amazonaws.com:5432/federhub
-REDIS_URL=redis://localhost:6379/0
-EXPECTED_CLIENTS=3
-GRPC_PORT=50051
-```
+### Issue 1: The `spawn ENOTDIR` Crash (PATH Resolution)
+* **The Problem:** When running from a `.dmg`, macOS strips the application's environment `PATH`. Electron could not find Python or Docker, crashing instantly.
+* **The Fix:** We injected a macOS-specific patch at the top of `main.js` to explicitly rebuild `process.env.PATH` with default system locations (`/usr/local/bin`, `/opt/homebrew/bin`).
 
-## RDS Migration
+### Issue 2: "Returned no data" (The ASAR Vault Lockout)
+* **The Problem:** Electron packages all code into a highly compressed, read-only `app.asar` archive. When we told Docker/Python to run our ML scripts, they failed silently because external programs cannot read inside an `.asar` file.
+* **The Fix:** We updated `package.json` with an `"asarUnpack"` rule, forcing Electron to leave the `ml/` scripts, `demo-client-data/`, and `Dockerfile` unpacked and accessible to the host system.
 
-Alpha's Phase 2 schema is preserved. The integrated project adds Gamma's `round_metrics` table.
+### Issue 3: Docker Buildx/BuildKit Deadlock
+* **The Problem:** We initially tried to run `docker build` inside the desktop app. macOS security sandboxing explicitly blocks `.dmg` applications from reading hidden folders like `~/.docker`. Docker panicked when it couldn't find its build plugins and blocked the execution.
+* **The Fix:** We pivoted to a **Pre-built Container Architecture**. We completely removed the `docker build` command from the client code. Instead, the ML Engineer builds the image once, and the client app only uses `docker run`.
 
-After replacing `pass` in `backend/.env` with the real password, run:
+### Issue 4: Docker Entrypoint Overlap
+* **The Problem:** When trying to validate a PyTorch model via `docker run federhub-beta-trainer python3 inspect.py`, the container crashed. The `Dockerfile` had a hardcoded `ENTRYPOINT` locking it to the `train.py` script.
+* **The Fix:** We updated the validation spawn command to include the `--entrypoint python3` flag, dynamically bypassing the Dockerfile lock to execute the inspection script cleanly.
 
-```bash
-cd backend
-set -a
-source .env
-set +a
-psql "$DATABASE_URL" -f migrations/phase2_rds_upgrade.sql
-psql "$DATABASE_URL" -f migrations/phase3_integration.sql
-psql "$DATABASE_URL" -f migrations/phase4_website_workflow.sql
-psql "$DATABASE_URL" -f migrations/phase5_publish_results.sql
-psql "$DATABASE_URL" -f migrations/phase6_job_description_weight_count.sql
-```
+### Issue 5: The "Blind Catcher" Aggregation Bug
+* **The Problem:** The gRPC server was indiscriminately grabbing weights from any node that submitted them, mixing Tumor Detection weights with Bone Fracture weights into a corrupted global model.
+* **The Fix:** Re-wrote `grpc_server.py` to intercept the `job_id` from the Protobuf request and route incoming tensors into isolated, dynamically generated state dictionaries. 
 
-The FastAPI app also calls SQLAlchemy `create_all` as a fallback, but the SQL files are the clean migration path for RDS.
+### Issue 6: The Stale Docker Container Trap
+* **The Problem:** Python scripts (`train.py`) were updated locally to accept the new `--job-id` arguments, but the Docker container threw an `unrecognized arguments` error.
+* **The Fix:** Established a protocol to rebuild the Gold Master Docker image (`docker build`) any time internal Python scripts are modified, ensuring the container accurately reflects the current codebase.
 
-## Run Locally
+### Issue 7: UI Ghost Data & Form Confusion
+* **The Problem:** New users logging into the React dashboard saw placeholder dummy weights (`0.140, 0.240...`) and an exposed manual submission form, making it look like they had already submitted data.
+* **The Fix:** Stripped hardcoded state from the React components and wrapped the manual fallback form in an "Override" toggle, ensuring the UI clearly directs clients to use the secure Edge Node Desktop app for submissions.
 
-Run the backend and frontend in **two separate Terminal windows**.
+---
 
-Terminal 1 - Backend:
+## 🚀 Step-by-Step Execution Guide
 
-```bash
-cd "/Users/naman/1)Projects/NYU projects/Federhub-all branches/merged/backend" && source .venv/bin/activate && uvicorn app.main:app --reload
-```
+Follow these steps exactly to run the full, end-to-end multi-tenant Federated Learning pipeline. You will need 5 terminal windows to run the complete microservice architecture.
 
-Terminal 2 - Frontend:
+### Step 1: Pre-Build the Docker Image (Admin Setup)
+Before any client can train, the core ML environment must be built on the host machine.
+1. Open your terminal.
+2. Navigate to your **main project root folder** (the folder containing both `client` and `federated-engine`).
+3. Run this command to build the Gold Master image:
+   ```bash
+   docker build -t federhub-beta-trainer -f client/Dockerfile .
+   ```
 
-```bash
-cd "/Users/naman/1)Projects/NYU projects/Federhub-all branches/merged/frontend" && npm start
-```
+### Step 2: Start the Gamma Orchestration Engine
+This is the core network that catches client weights and runs FedAvg aggregation. *(Ensure Redis is running in the background).*
+1. **Start the gRPC Server:** Open a new terminal, navigate to `federated-engine`, activate your `.venv`, and run:
+   ```bash
+   python grpc_server.py
+   ```
+2. **Start the Celery Worker:** Open a new terminal, navigate to `federated-engine`, activate your `.venv`, and run:
+   ```bash
+   celery -A celery_app worker --loglevel=info
+   ```
 
-Then open `http://localhost:3000`.
+### Step 3: Start the Web Infrastructure
+You need both the API and the React frontend running to manage jobs and view analytics.
+1. **Start the Backend:** Open a new terminal, navigate to the `backend` folder, activate your `.venv`, and run:
+   ```bash
+   python3 -m uvicorn app.main:app --reload
+   ```
+2. **Start the Frontend:** Open a new terminal, navigate to the `frontend` folder, and run:
+   ```bash
+   npm start
+   ```
+   *(This will open `http://localhost:3000` in your browser).*
 
-Optional Beta/Gamma local training bridge:
+### Step 4: Configure the Federated Jobs
+1. Log into the web dashboard as an **ML Engineer** (`engineer@test.com` / `password123`).
+2. Click **+ Create Job** and configure a Tumor Detection job (e.g., Name: `Tumor Detection`, Rounds: `3`, Expected Clients: `2`, Required Weights: `49`).
+3. Click **+ Create Job** again and configure a Bone Fracture job (e.g., Expected Clients: `2`).
+4. Click **Start Orchestration** on both job cards. **Note the distinct Job IDs assigned to each.**
 
-```bash
-cd client
-npm install
-npm start
-```
+### Step 5: Package and Run the Desktop Client
+1. Open a new terminal and navigate to the `client` folder.
+2. Package the app into a production `.dmg` file:
+   ```bash
+   npm run pack:mac
+   ```
+3. Open the `client/dist/` folder and launch the `FederHub Edge Node.dmg`.
+4. Drag the app to your desktop (or Applications folder) and open it.
 
-## Integrated Flow
+### Step 6: Execute Multi-Node Training
+1. In the Edge Node app, log in as the **Client Operator** (`hospital@test.com` / `password123`).
+2. **Set Target Job ID:** Enter the ID matching the Tumor job (e.g., `1`).
+3. **Select Checkpoint & Data:** Choose `tumor_model.pt` and the `tumor-detection` folder.
+4. Click **Start Training**.
+5. Open a second instance of the Edge Node (via terminal `npm start` in the `client` folder).
+6. Set the Target Job ID to `1`, select the tumor data, and click **Start Training**.
+7. *Watch the Gamma server terminal perfectly isolate and aggregate the weights once the expected client count is reached.*
 
-1. Create/login as an ML Engineer in the web app.
-2. Create a training job in the dashboard.
-3. Click `Start Orchestration`; the API marks the job running.
-4. Log in as a Client Operator.
-5. Open a running job card and submit a local update payload: client label, sample count, optional accuracy/loss, and model weights.
-6. When the configured number of clients submit for the active round, the backend runs FedAvg and writes a `round_metrics` row in RDS.
-7. The job advances to the next round or becomes completed after the configured final round.
-8. Admin and ML Engineer dashboards show creator, active round, pending updates, client count, total samples, and aggregate metrics.
+### Step 7: View the Isolated Results
+1. Return to your web browser (`http://localhost:3000`) and log in as an authorized client or ML Engineer.
+2. Click **View Live Dashboard & Details** on the job card.
+3. You will see the interactive Recharts plotting the exact accuracy, loss, and specific weight parameter updates dynamically saved to that specific Job ID.
 
-This browser workflow is the professor-demo path. The Electron client and Gamma gRPC engine remain available for deeper local-training demos, but users do not need terminal job IDs for the website product flow.
+---
+
+##  Comprehensive Testing Suite
+
+To ensure the reliability, security, and mathematical accuracy of the platform, we implemented a multi-tiered automated testing strategy using `pytest` and `Jest`.
+
+### 1. Backend API & Integration Testing (FastAPI / SQLite)
+We utilized an in-memory SQLite database (`StaticPool`) and FastAPI's `TestClient` to test the orchestration API without impacting development data.
+* **Authentication & RBAC:** Verified that JWT generation works and that strict Role-Based Access Control (RBAC) prevents unauthorized users from creating or modifying jobs.
+* **Zero-Knowledge Privacy Integration:** Wrote end-to-end integration tests proving that if a new Client Operator attempts to view a completed job, the API dynamically scrubs the proprietary `final_weights` and `metrics` arrays until that specific user has contributed local data.
+
+### 2. Machine Learning Unit Testing (FedAvg)
+We wrote isolated mathematical unit tests for the core aggregation engine (`fedavg_mock.py`).
+* **Flat Array Averaging:** Proved that the system accurately calculates weighted averages based on variable patient sample counts across different hospitals.
+* **Structured PyTorch State Dictionaries:** Proved that the engine correctly extracts, averages, and reconstructs multi-layer nested tensors (weights and biases) while preserving the exact neural network architecture.
+* **Edge-Case Handling:** Ensured the engine safely catches divide-by-zero errors if aggregation is triggered prematurely.
+
+### 3. Frontend Component Testing (React Testing Library / Jest)
+We isolated React components to ensure the user interface behaves predictably.
+* **API Mocking:** Intercepted Axios calls to render the Dashboard purely on local state.
+* **Event Simulation:** Programmatically verified that the "Download Edge App (.dmg/.exe)" buttons successfully trigger the correct OS-specific FastAPI download endpoints without crashing the browser router.

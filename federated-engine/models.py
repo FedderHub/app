@@ -1,14 +1,3 @@
-# models.py
-# =========
-# FederHub - Team Gamma | Phase 3
-# --------------------------------
-# Defines the RoundMetric table that Gamma writes to after each
-# federated aggregation round. This table lives in Alpha's PostgreSQL
-# database alongside their existing tables (organizations, users,
-# job_configurations).
-#
-# Gamma creates this table on startup via Base.metadata.create_all().
-
 from datetime import datetime
 
 from sqlalchemy import (
@@ -30,10 +19,6 @@ Base = declarative_base()
 class JobConfiguration(Base):
     """
     Mirror of Alpha's job_configurations table.
-
-    Gamma reads round_count, local_epochs, and status from this table
-    to drive the federated training loop. Gamma also updates the status
-    field as rounds progress.
     """
     __tablename__ = "job_configurations"
 
@@ -41,6 +26,10 @@ class JobConfiguration(Base):
     job_name = Column(String, nullable=False)
     round_count = Column(Integer, nullable=False, default=5)
     local_epochs = Column(Integer, nullable=False, default=3)
+    
+    # --- ADD THIS LINE so Gamma knows how many clients make up 1 round ---
+    expected_clients = Column(Integer, nullable=False, default=1) 
+    
     status = Column(String, nullable=False, default="draft")
     created_by = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -68,3 +57,25 @@ class RoundMetric(Base):
     total_samples = Column(Integer, nullable=True)
     global_weights_snapshot = Column(Text, nullable=True)  # JSON summary
     completed_at = Column(DateTime, default=datetime.utcnow)
+
+class ClientSubmission(Base):
+    """
+    Mirror of Alpha's client_submissions table.
+    Gamma writes to this table so the React UI knows a client has participated,
+    unlocking the privacy controls and populating the tables.
+    """
+    __tablename__ = "client_submissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, nullable=False)
+    client_label = Column(String, nullable=False)
+    round_number = Column(Integer, nullable=False)
+    sample_count = Column(Integer, nullable=False)
+    accuracy = Column(Float, nullable=True)
+    loss = Column(Float, nullable=True)
+    weights_json = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="aggregated")
+    
+    # --- FIX: Changed from completed_at to created_at to match Alpha's DB ---
+    created_at = Column(DateTime, default=datetime.utcnow)

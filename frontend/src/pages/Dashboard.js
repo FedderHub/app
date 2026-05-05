@@ -281,6 +281,13 @@ export default function Dashboard() {
                   <p style={styles.descriptionText}>{job.description}</p>
                 )}
 
+                <button
+                  style={styles.detailBtnFull}
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                >
+                  View Live Dashboard & Details
+                </button>
+
                 {isCompleted && (
                   <CompletedResults
                     job={job}
@@ -295,12 +302,6 @@ export default function Dashboard() {
 
                 {canManageJobs ? (
                   <div style={styles.cardActions}>
-                    <button
-                      style={styles.detailBtn}
-                      onClick={() => navigate(`/jobs/${job.id}`)}
-                    >
-                      View Details
-                    </button>
                     {!isCompleted && (
                       <button
                         style={styles.startBtn}
@@ -319,14 +320,6 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <>
-                    {job.results_published && (
-                      <button
-                        style={styles.detailBtn}
-                        onClick={() => navigate(`/jobs/${job.id}`)}
-                      >
-                        View Published Results
-                      </button>
-                    )}
                     <ClientSubmissionPanel
                       job={job}
                       form={submissionForms[job.id] || buildDefaultSubmissionForm(user.email, job)}
@@ -346,17 +339,12 @@ export default function Dashboard() {
 }
 
 function buildDefaultSubmissionForm(email, job) {
-  const seed = Number(job?.id || 1) + Number(job?.current_round || 1);
-  const count = Math.max(Number(job?.weight_count || 2), 1);
-  const weights = Array.from({ length: count }, (_item, index) =>
-    (0.1 * (index + 1) + seed * 0.01).toFixed(3)
-  );
   return {
     client_label: email || "Client Node",
-    sample_count: 100,
-    accuracy: 0.86,
-    loss: 0.24,
-    weights: weights.join(", "),
+    sample_count: "",
+    accuracy: "",
+    loss: "",
+    weights: "",
   };
 }
 
@@ -373,7 +361,6 @@ function parseSnapshot(metric) {
   if (!metric?.global_weights_snapshot) {
     return null;
   }
-
   try {
     return JSON.parse(metric.global_weights_snapshot);
   } catch {
@@ -401,21 +388,42 @@ function downloadJobReport(job, metrics, submissions) {
 }
 
 function ClientOperatorPanel() {
+  const handleDownloadApp = (osType) => {
+    const apiBase = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000";
+    window.open(`${apiBase}/download/client/${osType}`, "_blank");
+  };
+
   return (
-    <section style={styles.infoPanel}>
-      <h3 style={styles.panelTitle}>Client Operator Workspace</h3>
-      <div style={styles.operatorGrid}>
-        <div>
-          <span style={styles.operatorLabel}>Workflow</span>
-          <strong style={styles.operatorValue}>Choose a running job and submit a local model update.</strong>
+    <section style={{...styles.infoPanel, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px'}}>
+      <div>
+        <h3 style={styles.panelTitle}>Client Operator Workspace</h3>
+        <div style={styles.operatorGrid}>
+          <div>
+            <span style={styles.operatorLabel}>Workflow</span>
+            <strong style={styles.operatorValue}>Choose a running job and submit a local model update.</strong>
+          </div>
+          <div>
+            <span style={styles.operatorLabel}>Privacy</span>
+            <strong style={styles.operatorValue}>Only weights, metrics, and sample count are submitted.</strong>
+          </div>
+          <div>
+            <span style={styles.operatorLabel}>Aggregation</span>
+            <strong style={styles.operatorValue}>FedAvg runs automatically when enough clients submit.</strong>
+          </div>
         </div>
-        <div>
-          <span style={styles.operatorLabel}>Privacy</span>
-          <strong style={styles.operatorValue}>Only weights, metrics, and sample count are submitted.</strong>
-        </div>
-        <div>
-          <span style={styles.operatorLabel}>Aggregation</span>
-          <strong style={styles.operatorValue}>FedAvg runs automatically when enough clients submit.</strong>
+      </div>
+      <div style={{ background: '#0f172a', padding: '16px', borderRadius: '8px', border: '1px solid #334155', maxWidth: '300px' }}>
+        <h4 style={{ margin: '0 0 8px 0', color: '#f8fafc', fontSize: '15px' }}>Desktop Environment</h4>
+        <p style={{ margin: '0 0 16px 0', color: '#94a3b8', fontSize: '13px', lineHeight: '1.4' }}>
+          For local PyTorch training with secure data isolation, download the Edge Node app.
+        </p>
+        <div style={{display: 'flex', gap: '10px'}}>
+          <button style={{...styles.downloadAppBtn, background: '#e2e8f0', color: '#0f172a'}} onClick={() => handleDownloadApp('mac')}>
+             Mac (.dmg)
+          </button>
+          <button style={{...styles.downloadAppBtn, background: '#38bdf8', color: '#0f172a'}} onClick={() => handleDownloadApp('windows')}>
+            ⊞ Win (.exe)
+          </button>
         </div>
       </div>
     </section>
@@ -461,6 +469,9 @@ function formatMetric(value) {
 }
 
 function ClientSubmissionPanel({ job, form, submissions, onChange, onSubmit }) {
+  // State strictly for the manual override toggle
+  const [showManualForm, setShowManualForm] = useState(false);
+
   const alreadySubmitted = submissions.some(
     (item) => item.round_number === job.current_round
   );
@@ -487,63 +498,96 @@ function ClientSubmissionPanel({ job, form, submissions, onChange, onSubmit }) {
 
   return (
     <div style={styles.submitBox}>
-      <label style={styles.formLabel}>
-        Client label
-        <input
-          style={styles.formInput}
-          value={form.client_label}
-          onChange={(event) => onChange("client_label", event.target.value)}
-        />
-      </label>
-      <div style={styles.twoCols}>
-        <label style={styles.formLabel}>
-          Sample count
-          <input
-            style={styles.formInput}
-            type="number"
-            min="1"
-            value={form.sample_count}
-            onChange={(event) => onChange("sample_count", event.target.value)}
-          />
-        </label>
-        <label style={styles.formLabel}>
-          Accuracy
-          <input
-            style={styles.formInput}
-            type="number"
-            min="0"
-            max="1"
-            step="0.01"
-            value={form.accuracy}
-            onChange={(event) => onChange("accuracy", event.target.value)}
-          />
-        </label>
+      
+      {/* BUTTON 1: The Primary Edge Node / gRPC Trigger */}
+      <div style={{ marginBottom: "16px", paddingBottom: "16px", borderBottom: "1px solid #334155" }}>
+        <p style={{ color: "#e2e8f0", margin: "0 0 8px 0", fontSize: "14px", fontWeight: "bold" }}>
+          Round {job.current_round} is active.
+        </p>
+        <p style={{ color: "#94a3b8", margin: "0 0 12px 0", fontSize: "13px", lineHeight: "1.4" }}>
+          Run local training in your Edge Node App. Once the gRPC server receives your weights, click below to generate graphs.
+        </p>
+        <button 
+          style={{ ...styles.submitUpdateBtn, width: "100%", background: "#4ade80", color: "#052e16" }} 
+          onClick={() => window.location.reload()}
+        >
+          Sync gRPC Results & Generate Graph
+        </button>
       </div>
-      <label style={styles.formLabel}>
-        Loss
-        <input
-          style={styles.formInput}
-          type="number"
-          min="0"
-          step="0.01"
-          value={form.loss}
-          onChange={(event) => onChange("loss", event.target.value)}
-        />
-      </label>
-      <label style={styles.formLabel}>
-        Model weights ({job.weight_count} required)
-        <textarea
-          style={styles.textarea}
-          value={form.weights}
-          onChange={(event) => onChange("weights", event.target.value)}
-        />
-      </label>
-      <button style={styles.submitUpdateBtn} onClick={onSubmit}>
-        Submit Round {job.current_round} Update
+
+      {/* BUTTON 2: The Manual Override Toggle */}
+      <button 
+        style={{ ...styles.refreshBtn, width: "100%", fontSize: "13px", padding: "8px", marginBottom: showManualForm ? "14px" : "0" }}
+        onClick={() => setShowManualForm(!showManualForm)}
+      >
+        {showManualForm ? "Cancel Manual Override" : "Manual Override (Fallback)"}
       </button>
+
+      {/* The Hidden Manual Form & Its Submit Button */}
+      {showManualForm && (
+        <div style={{ display: "grid", gap: "10px" }}>
+          <label style={styles.formLabel}>
+            Client label
+            <input
+              style={styles.formInput}
+              value={form.client_label}
+              onChange={(event) => onChange("client_label", event.target.value)}
+            />
+          </label>
+          <div style={styles.twoCols}>
+            <label style={styles.formLabel}>
+              Sample count
+              <input
+                style={styles.formInput}
+                type="number"
+                min="1"
+                value={form.sample_count}
+                onChange={(event) => onChange("sample_count", event.target.value)}
+              />
+            </label>
+            <label style={styles.formLabel}>
+              Accuracy
+              <input
+                style={styles.formInput}
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={form.accuracy}
+                onChange={(event) => onChange("accuracy", event.target.value)}
+              />
+            </label>
+          </div>
+          <label style={styles.formLabel}>
+            Loss
+            <input
+              style={styles.formInput}
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.loss}
+              onChange={(event) => onChange("loss", event.target.value)}
+            />
+          </label>
+          <label style={styles.formLabel}>
+            Model weights ({job.weight_count} required)
+            <textarea
+              style={styles.textarea}
+              value={form.weights}
+              onChange={(event) => onChange("weights", event.target.value)}
+            />
+          </label>
+          
+          <button style={styles.submitUpdateBtn} onClick={onSubmit}>
+            Submit Manual Weights
+          </button>
+        </div>
+      )}
+      
     </div>
   );
 }
+
 
 function AdminUsersPanel({ users, onStatusChange }) {
   return (
@@ -581,153 +625,37 @@ function AdminUsersPanel({ users, onStatusChange }) {
 const styles = {
   page: { minHeight: "100vh", background: "#0f172a", fontFamily: "Arial, sans-serif" },
   content: { maxWidth: "1120px", margin: "0 auto", padding: "32px 24px" },
-  topBand: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "16px",
-    marginBottom: "24px",
-  },
+  topBand: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px" },
   heading: { color: "#f1f5f9", fontSize: "24px", margin: 0 },
   subtext: { color: "#94a3b8", fontSize: "14px", margin: "6px 0 0" },
-  createBtn: {
-    padding: "10px 20px",
-    borderRadius: "8px",
-    background: "#38bdf8",
-    color: "#0f172a",
-    fontWeight: "bold",
-    border: "none",
-    cursor: "pointer",
-    fontSize: "14px",
-  },
-  sectionHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    margin: "24px 0 16px",
-  },
+  createBtn: { padding: "10px 20px", borderRadius: "8px", background: "#38bdf8", color: "#0f172a", fontWeight: "bold", border: "none", cursor: "pointer", fontSize: "14px" },
+  sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "24px 0 16px" },
   sectionTitle: { color: "#e2e8f0", fontSize: "18px", margin: 0 },
-  refreshBtn: {
-    padding: "8px 14px",
-    borderRadius: "8px",
-    background: "transparent",
-    color: "#cbd5e1",
-    border: "1px solid #334155",
-    cursor: "pointer",
-  },
+  refreshBtn: { padding: "8px 14px", borderRadius: "8px", background: "transparent", color: "#cbd5e1", border: "1px solid #334155", cursor: "pointer" },
   muted: { color: "#94a3b8" },
   error: { color: "#f87171" },
   notice: { color: "#cbd5e1", background: "#164e63", padding: "10px 12px", borderRadius: "8px" },
   emptyState: { textAlign: "center", padding: "60px 0" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" },
-  card: {
-    background: "#1e293b",
-    borderRadius: "8px",
-    padding: "20px",
-    border: "1px solid #334155",
-  },
+  card: { background: "#1e293b", borderRadius: "8px", padding: "20px", border: "1px solid #334155" },
   cardTop: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "14px" },
   jobName: { color: "#f1f5f9", fontWeight: "bold", fontSize: "16px" },
   jobId: { color: "#64748b", fontSize: "12px", margin: "4px 0 0" },
-  badge: {
-    padding: "4px 10px",
-    borderRadius: "999px",
-    fontSize: "12px",
-    color: "#0f172a",
-    fontWeight: "bold",
-    whiteSpace: "nowrap",
-  },
+  badge: { padding: "4px 10px", borderRadius: "999px", fontSize: "12px", color: "#0f172a", fontWeight: "bold", whiteSpace: "nowrap" },
   metaStack: { display: "grid", gap: "7px", color: "#94a3b8", fontSize: "14px", marginBottom: "12px" },
-  descriptionText: {
-    color: "#cbd5e1",
-    fontSize: "13px",
-    lineHeight: 1.45,
-    background: "#0f172a",
-    border: "1px solid #334155",
-    borderRadius: "8px",
-    padding: "10px",
-    margin: "10px 0",
-    whiteSpace: "pre-wrap",
-  },
+  descriptionText: { color: "#cbd5e1", fontSize: "13px", lineHeight: 1.45, background: "#0f172a", border: "1px solid #334155", borderRadius: "8px", padding: "10px", margin: "10px 0", whiteSpace: "pre-wrap" },
   cardDate: { color: "#64748b", fontSize: "12px", margin: 0 },
   cardActions: { display: "flex", gap: "10px", marginTop: "14px", flexWrap: "wrap" },
-  startBtn: {
-    padding: "9px 14px",
-    borderRadius: "8px",
-    background: "#4ade80",
-    color: "#052e16",
-    fontWeight: "bold",
-    border: "none",
-    cursor: "pointer",
-    fontSize: "13px",
-  },
-  deleteBtn: {
-    padding: "9px 14px",
-    borderRadius: "8px",
-    background: "#7f1d1d",
-    color: "#fecaca",
-    fontWeight: "bold",
-    border: "1px solid #991b1b",
-    cursor: "pointer",
-    fontSize: "13px",
-  },
-  detailBtn: {
-    padding: "9px 14px",
-    borderRadius: "8px",
-    background: "#38bdf8",
-    color: "#082f49",
-    fontWeight: "bold",
-    border: "none",
-    cursor: "pointer",
-    fontSize: "13px",
-  },
-  resultsBox: {
-    background: "#0f172a",
-    border: "1px solid #14532d",
-    borderRadius: "8px",
-    padding: "12px",
-    margin: "12px 0",
-  },
-  resultsHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "10px",
-    color: "#bbf7d0",
-    fontSize: "14px",
-    marginBottom: "10px",
-  },
-  resultsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: "8px",
-    color: "#cbd5e1",
-    fontSize: "13px",
-  },
-  reportBtn: {
-    padding: "6px 10px",
-    borderRadius: "6px",
-    border: "1px solid #166534",
-    background: "#14532d",
-    color: "#dcfce7",
-    cursor: "pointer",
-    fontSize: "12px",
-    fontWeight: "bold",
-  },
-  weightsPreview: {
-    color: "#94a3b8",
-    fontSize: "12px",
-    margin: "10px 0 0",
-    overflowWrap: "anywhere",
-  },
+  startBtn: { padding: "9px 14px", borderRadius: "8px", background: "#4ade80", color: "#052e16", fontWeight: "bold", border: "none", cursor: "pointer", fontSize: "13px" },
+  deleteBtn: { padding: "9px 14px", borderRadius: "8px", background: "#7f1d1d", color: "#fecaca", fontWeight: "bold", border: "1px solid #991b1b", cursor: "pointer", fontSize: "13px" },
+  detailBtnFull: { width: "100%", padding: "10px", borderRadius: "8px", background: "#38bdf8", color: "#082f49", fontWeight: "bold", border: "none", cursor: "pointer", fontSize: "14px", margin: "10px 0" },
+  resultsBox: { background: "#0f172a", border: "1px solid #14532d", borderRadius: "8px", padding: "12px", margin: "12px 0" },
+  resultsHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", color: "#bbf7d0", fontSize: "14px", marginBottom: "10px" },
+  resultsGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", color: "#cbd5e1", fontSize: "13px" },
+  reportBtn: { padding: "6px 10px", borderRadius: "6px", border: "1px solid #166534", background: "#14532d", color: "#dcfce7", cursor: "pointer", fontSize: "12px", fontWeight: "bold" },
+  weightsPreview: { color: "#94a3b8", fontSize: "12px", margin: "10px 0 0", overflowWrap: "anywhere" },
   clientNote: { color: "#cbd5e1", fontSize: "13px", margin: "14px 0 0" },
-  infoPanel: {
-    background: "#1e293b",
-    border: "1px solid #334155",
-    borderRadius: "8px",
-    padding: "18px",
-    marginBottom: "18px",
-  },
+  infoPanel: { background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "18px", marginBottom: "18px" },
   panelTitle: { color: "#f1f5f9", fontSize: "16px", margin: "0 0 14px" },
   operatorGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" },
   operatorLabel: { display: "block", color: "#94a3b8", fontSize: "12px", marginBottom: "4px" },
@@ -739,47 +667,11 @@ const styles = {
   tdActions: { borderBottom: "1px solid #334155", padding: "8px", display: "flex", gap: "8px", flexWrap: "wrap" },
   smallBtn: { padding: "6px 10px", borderRadius: "6px", border: "none", background: "#38bdf8", color: "#082f49", cursor: "pointer" },
   smallDangerBtn: { padding: "6px 10px", borderRadius: "6px", border: "none", background: "#991b1b", color: "#fee2e2", cursor: "pointer" },
-  submitBox: {
-    display: "grid",
-    gap: "10px",
-    marginTop: "14px",
-    paddingTop: "14px",
-    borderTop: "1px solid #334155",
-  },
+  submitBox: { display: "grid", gap: "10px", marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #334155" },
   twoCols: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" },
-  formLabel: {
-    display: "grid",
-    gap: "5px",
-    color: "#94a3b8",
-    fontSize: "12px",
-    fontWeight: "bold",
-  },
-  formInput: {
-    padding: "8px 10px",
-    borderRadius: "6px",
-    border: "1px solid #334155",
-    background: "#0f172a",
-    color: "#e2e8f0",
-    fontSize: "13px",
-  },
-  textarea: {
-    minHeight: "68px",
-    padding: "8px 10px",
-    borderRadius: "6px",
-    border: "1px solid #334155",
-    background: "#0f172a",
-    color: "#e2e8f0",
-    fontSize: "13px",
-    resize: "vertical",
-  },
-  submitUpdateBtn: {
-    padding: "9px 14px",
-    borderRadius: "8px",
-    background: "#38bdf8",
-    color: "#082f49",
-    fontWeight: "bold",
-    border: "none",
-    cursor: "pointer",
-    fontSize: "13px",
-  },
+  formLabel: { display: "grid", gap: "5px", color: "#94a3b8", fontSize: "12px", fontWeight: "bold" },
+  formInput: { padding: "8px 10px", borderRadius: "6px", border: "1px solid #334155", background: "#0f172a", color: "#e2e8f0", fontSize: "13px" },
+  textarea: { minHeight: "68px", padding: "8px 10px", borderRadius: "6px", border: "1px solid #334155", background: "#0f172a", color: "#e2e8f0", fontSize: "13px", resize: "vertical" },
+  submitUpdateBtn: { padding: "9px 14px", borderRadius: "8px", background: "#38bdf8", color: "#082f49", fontWeight: "bold", border: "none", cursor: "pointer", fontSize: "13px" },
+  downloadAppBtn: { padding: "6px 12px", borderRadius: "6px", border: "none", fontSize: "12px", fontWeight: "bold", cursor: "pointer", transition: "opacity 0.2s" }
 };

@@ -14,3 +14,19 @@ backend/federhub/
 backend/federhub.db
 client/ml/output/
 coverage/
+
+# Node & Electron
+node_modules/
+dist/
+build/
+*.dmg
+*.exe
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Local Databases & ML Models
+federhub.db
+*.pt

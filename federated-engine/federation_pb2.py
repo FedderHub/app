@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x66\x65\x64\x65ration.proto\x12\nfederation\"=\n\nTensorData\x12\x12\n\nlayer_name\x18\x01 \x01(\t\x12\r\n\x05shape\x18\x02 \x03(\x05\x12\x0c\n\x04\x64\x61ta\x18\x03 \x03(\x02\"\x8c\x01\n\x0cWeightUpdate\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\x14\n\x0csample_count\x18\x02 \x01(\x05\x12\x0f\n\x07weights\x18\x03 \x03(\x02\x12&\n\x06layers\x18\x04 \x03(\x0b\x32\x16.federation.TensorData\x12\x1a\n\x12model_architecture\x18\x05 \x01(\t\"-\n\tUpdateAck\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t2U\n\nAggregator\x12G\n\x12SubmitWeightUpdate\x12\x18.federation.WeightUpdate\x1a\x15.federation.UpdateAck\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x66\x65\x64\x65ration.proto\x12\nfederation\"=\n\nTensorData\x12\x12\n\nlayer_name\x18\x01 \x01(\t\x12\r\n\x05shape\x18\x02 \x03(\x05\x12\x0c\n\x04\x64\x61ta\x18\x03 \x03(\x02\"\x9c\x01\n\x0cWeightUpdate\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\x14\n\x0csample_count\x18\x02 \x01(\x05\x12\x0f\n\x07weights\x18\x03 \x03(\x02\x12&\n\x06layers\x18\x04 \x03(\x0b\x32\x16.federation.TensorData\x12\x1a\n\x12model_architecture\x18\x05 \x01(\t\x12\x0e\n\x06job_id\x18\x06 \x01(\x05\"-\n\tUpdateAck\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t2U\n\nAggregator\x12G\n\x12SubmitWeightUpdate\x12\x18.federation.WeightUpdate\x1a\x15.federation.UpdateAck\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,9 +34,9 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_TENSORDATA']._serialized_start=32
   _globals['_TENSORDATA']._serialized_end=93
   _globals['_WEIGHTUPDATE']._serialized_start=96
-  _globals['_WEIGHTUPDATE']._serialized_end=236
-  _globals['_UPDATEACK']._serialized_start=238
-  _globals['_UPDATEACK']._serialized_end=283
-  _globals['_AGGREGATOR']._serialized_start=285
-  _globals['_AGGREGATOR']._serialized_end=370
+  _globals['_WEIGHTUPDATE']._serialized_end=252
+  _globals['_UPDATEACK']._serialized_start=254
+  _globals['_UPDATEACK']._serialized_end=299
+  _globals['_AGGREGATOR']._serialized_start=301
+  _globals['_AGGREGATOR']._serialized_end=386
 # @@protoc_insertion_point(module_scope)
