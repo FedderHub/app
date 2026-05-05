@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import client from "../api/client";
 import Navbar from "../components/Navbar";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer
+} from 'recharts';
 
 export default function JobDetailsPage() {
   const { jobId } = useParams();
@@ -17,21 +20,27 @@ export default function JobDetailsPage() {
 
   const canPublish = user.role === "platform_admin" || user.role === "ml_engineer";
 
-  const loadDetails = async () => {
-    setError("");
-    setLoading(true);
+  const loadDetails = async (showLoader = true) => {
+    if (showLoader) setLoading(true);
     try {
       const res = await client.get(`/jobs/${jobId}/details`);
       setDetails(res.data);
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to load job details.");
+      if (showLoader) setError(err.response?.data?.detail || "Failed to load job details.");
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDetails();
+    loadDetails(true);
+    
+    // LIVE GRAPH SYNC: Automatically poll the API every 3 seconds for new rolling updates
+    const intervalId = setInterval(() => {
+      loadDetails(false); // Fetch new data silently without flashing the loading screen
+    }, 3000);
+
+    return () => clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
@@ -59,7 +68,6 @@ export default function JobDetailsPage() {
   };
 
   const finalMetric = details?.final_metric;
-  const finalWeights = details?.final_weights || [];
 
   return (
     <div style={styles.page}>
@@ -77,22 +85,12 @@ export default function JobDetailsPage() {
           <>
             <section style={styles.header}>
               <div>
-                <p style={styles.eyebrow}>Job #{details.job.id}</p>
+                <span style={styles.eyebrowBadge}>JOB ID: {details.job.id}</span>
                 <h1 style={styles.title}>{details.job.job_name}</h1>
-                <p style={styles.muted}>Created by {details.job.creator_email || "Unknown"}</p>
+                <p style={styles.muted}>Viewing as: <strong style={{color: '#f8fafc'}}>{user.email}</strong></p>
               </div>
               <span style={styles.status}>{details.job.status}</span>
             </section>
-
-            {details.job.description && (
-              <section style={styles.panel}>
-                <h2 style={styles.panelTitle}>Job Description and Feature Notes</h2>
-                <p style={styles.descriptionText}>{details.job.description}</p>
-                <p style={styles.muted}>
-                  Required client weight vector length: <strong>{details.job.weight_count}</strong>
-                </p>
-              </section>
-            )}
 
             <section style={styles.actions}>
               <button style={styles.downloadBtn} onClick={downloadReport}>
@@ -109,53 +107,15 @@ export default function JobDetailsPage() {
             </section>
 
             <section style={styles.summaryGrid}>
-              <SummaryCard label="Rounds Completed" value={details.metrics.length} />
-              <SummaryCard label="Final Accuracy" value={formatMetric(finalMetric?.accuracy)} />
-              <SummaryCard label="Final Loss" value={formatMetric(finalMetric?.loss)} />
-              <SummaryCard label="Total Samples" value={finalMetric?.total_samples ?? "N/A"} />
+              <SummaryCard label="Total Updates Aggregated" value={details.metrics.length} />
+              <SummaryCard label="Latest Accuracy" value={formatMetric(finalMetric?.accuracy)} />
+              <SummaryCard label="Latest Loss" value={formatMetric(finalMetric?.loss)} />
+              <SummaryCard label="Total Network Samples" value={finalMetric?.total_samples ?? "0"} />
             </section>
 
-            <section style={styles.panel}>
-              <h2 style={styles.panelTitle}>Final FedAvg Calculation</h2>
-              <p style={styles.muted}>
-                Each round computes a weighted average of submitted client weights using sample count as the contribution weight.
-              </p>
-              <div style={styles.formulaBox}>
-                global_weight[i] = sum((client_samples / total_samples) * client_weight[i])
-              </div>
-              <h3 style={styles.smallHeading}>Final Global Weights</h3>
-              <pre style={styles.weightsBox}>{finalWeights.length ? finalWeights.join(", ") : "No final weights available yet."}</pre>
-            </section>
-
-            <section style={styles.panel}>
-              <h2 style={styles.panelTitle}>Round Aggregates</h2>
-              <div style={styles.tableWrap}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Round</th>
-                      <th style={styles.th}>Accuracy</th>
-                      <th style={styles.th}>Loss</th>
-                      <th style={styles.th}>Clients</th>
-                      <th style={styles.th}>Samples</th>
-                      <th style={styles.th}>Global Weights</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {details.metrics.map((metric) => (
-                      <tr key={metric.id}>
-                        <td style={styles.td}>{metric.round_number}</td>
-                        <td style={styles.td}>{formatMetric(metric.accuracy)}</td>
-                        <td style={styles.td}>{formatMetric(metric.loss)}</td>
-                        <td style={styles.td}>{metric.num_clients ?? "N/A"}</td>
-                        <td style={styles.td}>{metric.total_samples ?? "N/A"}</td>
-                        <td style={styles.tdMono}>{(metric.global_weights || []).join(", ")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+            {details.metrics && details.metrics.length > 0 && (
+               <MetricsDashboard metrics={details.metrics} finalMetric={finalMetric} />
+            )}
 
             <section style={styles.panel}>
               <h2 style={styles.panelTitle}>Client Round Submissions</h2>
@@ -164,24 +124,25 @@ export default function JobDetailsPage() {
                   <thead>
                     <tr>
                       <th style={styles.th}>Client</th>
-                      <th style={styles.th}>Email</th>
                       <th style={styles.th}>Round</th>
                       <th style={styles.th}>Samples</th>
                       <th style={styles.th}>Accuracy</th>
                       <th style={styles.th}>Loss</th>
-                      <th style={styles.th}>Weights</th>
+                      <th style={styles.th}>Weights Preview</th>
                     </tr>
                   </thead>
                   <tbody>
                     {details.submissions.map((submission) => (
                       <tr key={submission.id}>
                         <td style={styles.td}>{submission.client_label}</td>
-                        <td style={styles.td}>{submission.client_email || "Hidden"}</td>
                         <td style={styles.td}>{submission.round_number}</td>
                         <td style={styles.td}>{submission.sample_count}</td>
                         <td style={styles.td}>{formatMetric(submission.accuracy)}</td>
                         <td style={styles.td}>{formatMetric(submission.loss)}</td>
-                        <td style={styles.tdMono}>{submission.weights.join(", ")}</td>
+                        <td style={styles.tdMono}>
+                          {submission.weights.slice(0, 5).join(", ")}
+                          {submission.weights.length > 5 ? "..." : ""}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -192,6 +153,124 @@ export default function JobDetailsPage() {
         )}
       </main>
     </div>
+  );
+}
+
+// --- Custom Recharts Tooltip showing User Names ---
+const CustomHoverTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const dataPoint = payload[0].payload;
+    return (
+      <div style={{ backgroundColor: '#0f172a', padding: '10px', border: '1px solid #38bdf8', borderRadius: '5px', color: '#f1f5f9', fontSize: '13px' }}>
+        <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>{label}</p>
+        <p style={{ margin: '0 0 5px 0', color: '#94a3b8' }}>
+          <strong>Contributors: </strong> {dataPoint.clients || "System Default"}
+        </p>
+        <hr style={{ borderColor: '#334155', margin: '5px 0' }}/>
+        {payload.map((entry, index) => (
+          <p key={index} style={{ color: entry.color, margin: '3px 0' }}>
+            {entry.name}: {entry.value?.toFixed(4)}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+// --- Interactive Metrics Dashboard ---
+function MetricsDashboard({ metrics, finalMetric }) {
+  // A palette of distinct colors for the multi-line weight chart
+  const lineColors = ['#38bdf8', '#4ade80', '#fbbf24', '#c084fc', '#f87171', '#a78bfa'];
+
+  // 1. Prepare Chart Data (Accuracy, Loss, AND Weights over time)
+  const trendData = metrics.map(m => {
+    const snapshot = m.global_weights_snapshot || {};
+    const parsedSnapshot = typeof snapshot === 'string' ? JSON.parse(snapshot) : snapshot;
+    const clientList = parsedSnapshot.client_labels ? parsedSnapshot.client_labels.join(", ") : "Unknown Clients";
+
+    let dataPoint = {
+      round: `Round ${m.round_number}`,
+      accuracy: m.accuracy || 0,
+      loss: m.loss || 0,
+      clients: clientList
+    };
+
+    const isStructured = Object.keys(parsedSnapshot).length > 0 && !parsedSnapshot.global_weights;
+    if (isStructured) {
+      Object.keys(parsedSnapshot).forEach(key => {
+        if (key !== 'client_labels' && key !== 'algorithm' && key !== 'round_number') {
+          dataPoint[key.replace('.weight', '').replace('.bias', ' (b)')] = parsedSnapshot[key].mean || 0;
+        }
+      });
+    } else {
+      const flatWeights = parsedSnapshot.global_weights || m.global_weights || [];
+      flatWeights.forEach((w, i) => {
+        if (i < 6) dataPoint[`Param ${i+1}`] = w;
+      });
+    }
+    return dataPoint;
+  });
+
+  const weightKeys = trendData.length > 0 
+    ? Object.keys(trendData[0]).filter(k => k !== 'round' && k !== 'accuracy' && k !== 'loss' && k !== 'clients')
+    : [];
+
+  return (
+    <section style={styles.panel}>
+      <h2 style={styles.panelTitle}>FedAvg Training Dashboard</h2>
+      <p style={styles.muted}>Real-time visualization of model convergence and weight distribution.</p>
+      
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginTop: "20px" }}>
+        
+        {/* Performance Trends Chart */}
+        <div style={styles.chartContainer}>
+          <h3 style={styles.chartTitle}>Accuracy & Loss Convergence</h3>
+          <div style={{ height: 280, width: '100%' }}>
+            <ResponsiveContainer>
+              <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="round" stroke="#94a3b8" style={{fontSize: '12px'}} />
+                <YAxis yAxisId="left" stroke="#4ade80" style={{fontSize: '12px'}} />
+                <YAxis yAxisId="right" orientation="right" stroke="#f87171" style={{fontSize: '12px'}} />
+                <RechartsTooltip content={<CustomHoverTooltip />} />
+                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/>
+                <Line yAxisId="left" type="monotone" dataKey="accuracy" stroke="#4ade80" name="Accuracy" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line yAxisId="right" type="monotone" dataKey="loss" stroke="#f87171" name="Loss" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Weights Progression Chart (Now perfectly matching the left chart) */}
+        <div style={styles.chartContainer}>
+          <h3 style={styles.chartTitle}>Weight Progression Across Rounds</h3>
+          <div style={{ height: 280, width: '100%' }}>
+            <ResponsiveContainer>
+              <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="round" stroke="#94a3b8" style={{fontSize: '12px'}} />
+                <YAxis stroke="#94a3b8" style={{fontSize: '12px'}} />
+                <RechartsTooltip content={<CustomHoverTooltip />} />
+                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/>
+                {weightKeys.map((key, index) => (
+                  <Line 
+                    key={key} 
+                    type="monotone" 
+                    dataKey={key} 
+                    stroke={lineColors[index % lineColors.length]} 
+                    strokeWidth={3}  /* Updated to match chart 1 */
+                    dot={{ r: 4 }}   /* Updated to match chart 1 */
+                    activeDot={{ r: 6 }} /* Updated to match chart 1 */
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+      </div>
+    </section>
   );
 }
 
@@ -216,8 +295,8 @@ const styles = {
   content: { maxWidth: "1180px", margin: "0 auto", padding: "32px 24px" },
   backBtn: { background: "transparent", border: "1px solid #334155", color: "#cbd5e1", borderRadius: "8px", padding: "8px 12px", cursor: "pointer", marginBottom: "20px" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "16px", marginBottom: "20px" },
-  eyebrow: { color: "#38bdf8", fontSize: "13px", margin: 0, fontWeight: "bold" },
-  title: { color: "#f8fafc", fontSize: "32px", margin: "4px 0" },
+  eyebrowBadge: { background: '#38bdf8', color: '#0f172a', padding: '4px 8px', borderRadius: '4px', fontSize: "12px", margin: 0, fontWeight: "bold" },
+  title: { color: "#f8fafc", fontSize: "32px", margin: "8px 0 4px" },
   muted: { color: "#94a3b8" },
   error: { color: "#f87171" },
   notice: { color: "#cbd5e1", background: "#164e63", padding: "10px 12px", borderRadius: "8px" },
@@ -230,15 +309,14 @@ const styles = {
   summaryCard: { background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "14px" },
   summaryLabel: { display: "block", color: "#94a3b8", fontSize: "12px", marginBottom: "6px" },
   summaryValue: { display: "block", color: "#f8fafc", fontSize: "20px" },
-  panel: { background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "18px", marginBottom: "18px" },
-  panelTitle: { color: "#f8fafc", margin: "0 0 10px", fontSize: "20px" },
-  descriptionText: { color: "#cbd5e1", whiteSpace: "pre-wrap", lineHeight: 1.5 },
-  smallHeading: { color: "#e2e8f0", margin: "16px 0 8px", fontSize: "15px" },
-  formulaBox: { background: "#0f172a", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "8px", padding: "12px", fontFamily: "monospace", overflowX: "auto" },
-  weightsBox: { background: "#0f172a", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "8px", padding: "12px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
-  tableWrap: { overflowX: "auto" },
+  panel: { background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "24px", marginBottom: "20px" },
+  panelTitle: { color: "#f8fafc", margin: "0 0 8px", fontSize: "20px" },
+  chartContainer: { background: "#0f172a", border: "1px solid #334155", borderRadius: "8px", padding: "16px" },
+  chartTitle: { color: "#e2e8f0", fontSize: "14px", margin: "0 0 16px 0", textAlign: "center" },
+  tableWrap: { overflowX: "auto", marginTop: "16px" },
   table: { width: "100%", borderCollapse: "collapse", color: "#cbd5e1", fontSize: "14px" },
-  th: { textAlign: "left", color: "#94a3b8", borderBottom: "1px solid #334155", padding: "8px" },
-  td: { borderBottom: "1px solid #334155", padding: "8px", verticalAlign: "top" },
-  tdMono: { borderBottom: "1px solid #334155", padding: "8px", verticalAlign: "top", fontFamily: "monospace", fontSize: "12px", minWidth: "220px" },
+  th: { textAlign: "left", color: "#94a3b8", borderBottom: "1px solid #334155", padding: "10px 8px" },
+  td: { borderBottom: "1px solid #334155", padding: "10px 8px", verticalAlign: "top" },
+  tdMono: { borderBottom: "1px solid #334155", padding: "10px 8px", verticalAlign: "top", fontFamily: "monospace", fontSize: "12px", minWidth: "150px" },
 };
+

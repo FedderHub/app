@@ -147,6 +147,7 @@ function setButtonsDisabled(isDisabled) {
   logoutButton.disabled = isDisabled || !(activeSession && activeSession.accessToken);
 }
 
+// --- UPDATED: Removed clientId mapping ---
 function buildPayload() {
   return {
     username: document.getElementById("username").value.trim(),
@@ -155,7 +156,8 @@ function buildPayload() {
     checkpointPath: checkpointInput.value.trim(),
     selectedFolder: folderInput.value.trim(),
     gammaServer: document.getElementById("gamma-server").value.trim(),
-    clientId: document.getElementById("client-id").value.trim(),
+    jobId: document.getElementById("job-id").value.trim(), 
+    // clientId has been removed. Electron will auto-inject it securely from the session in main.js.
   };
 }
 
@@ -223,6 +225,12 @@ async function runTraining(startFn, options = {}) {
   if (!payload.selectedFolder) {
     setStatus("Folder Needed", "error");
     setLog("Choose a local dataset folder before starting training.");
+    return;
+  }
+  
+  if (!payload.jobId) {
+    setStatus("Job ID Needed", "error");
+    setLog("Please enter a Target Job ID before starting training.");
     return;
   }
 

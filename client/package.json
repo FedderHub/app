@@ -7,9 +7,40 @@
   "scripts": {
     "start": "electron .",
     "train": "python ml/train.py --data demo-client-data/sample_client_data.csv --checkpoint demo-client-data/sample_model.pt --output-dir ml/output",
-    "docker:build": "docker build -t federhub-beta-trainer ."
+    "docker:build": "docker build -t federhub-beta-trainer .",
+    "pack:mac": "electron-builder --mac",
+    "pack:win": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^37.2.0"
+    "electron": "^37.2.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.federhub.client",
+    "productName": "FederHub Edge Node",
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "asarUnpack": [
+      "ml/**/*",
+      "demo-client-data/**/*",
+      "grpc_weight_sender.py",
+      "Dockerfile",
+      "requirements.txt"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "ml/**/*",
+      "demo-client-data/**/*",
+      "grpc_weight_sender.py",
+      "Dockerfile",
+      "requirements.txt",
+      "package.json"
+    ]
   }
 }

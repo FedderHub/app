@@ -26,6 +26,7 @@ message WeightUpdate {
   repeated float weights = 3;        // Phase 2 flat mode (backward compat)
   repeated TensorData layers = 4;    // Phase 3 structured state_dict mode
   string model_architecture = 5;     // Optional model description
+  int32 job_id = 6;
 }
 
 // The server's acknowledgment response

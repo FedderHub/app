@@ -302,7 +302,7 @@ def get_job_details(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Detailed per-job view with client submissions, round metrics, and final results."""
+    """Detailed per-job view with client-specific visibility logic."""
     job = db.query(models.JobConfiguration).filter(
         models.JobConfiguration.id == job_id
     ).first()
@@ -310,26 +310,34 @@ def get_job_details(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     is_manager = current_user.role in {"platform_admin", "ml_engineer"}
-    visible_to_clients = bool(job.results_published)
-    if current_user.role == "client_operator" and not visible_to_clients:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Final results have not been published to Client Operators yet.",
-        )
+    
+    # Check if this specific user has ever contributed to this job
+    user_has_contributed = db.query(models.ClientSubmission).filter(
+        models.ClientSubmission.job_id == job_id,
+        models.ClientSubmission.user_id == current_user.id
+    ).first() is not None
 
     creator_email = None
     if job.created_by:
         creator = db.query(models.User).filter(models.User.id == job.created_by).first()
         creator_email = creator.email if creator else None
 
-    details = build_job_details(db, job, creator_email, visible_to_clients)
+    # Build the full details object
+    details = build_job_details(db, job, creator_email, bool(job.results_published))
 
+    # --- PRIVACY LOGIC ---
     if not is_manager:
+        # 1. Only show them THEIR own submissions
         details.submissions = [
-            submission
-            for submission in details.submissions
-            if submission.user_id == current_user.id
+            s for s in details.submissions if s.user_id == current_user.id
         ]
+        
+        # 2. If they haven't contributed, HIDE the global metrics and weights
+        if not user_has_contributed:
+            details.metrics = []
+            details.final_metric = None
+            details.final_weights = []
+            details.message = "You must submit a local training update to view global model insights."
 
     return details
 

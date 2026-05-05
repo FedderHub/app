@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
@@ -29,8 +29,7 @@ class UserOut(BaseModel):
     status: str
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Jobs ──────────────────────────────────────────────────────────────────────
@@ -59,8 +58,7 @@ class JobOut(BaseModel):
     creator_email: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class JobStartResponse(BaseModel):
     job_id: int
@@ -79,8 +77,7 @@ class RoundMetricOut(BaseModel):
     global_weights_snapshot: Optional[str] = None
     completed_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserStatusUpdate(BaseModel):
@@ -108,8 +105,7 @@ class ClientSubmissionOut(BaseModel):
     status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SubmissionResponse(BaseModel):
@@ -154,6 +150,7 @@ class JobDetailsOut(BaseModel):
     final_metric: Optional[RoundMetricDetail] = None
     final_weights: List[float] = []
     visible_to_clients: bool
+    message: Optional[str] = None
 
 
 class PublishResponse(BaseModel):
